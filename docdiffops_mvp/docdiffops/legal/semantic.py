@@ -131,23 +131,39 @@ def judge(
     return _parse_verdict(content, model)
 
 
-def _post_chat(api_key: str, model: str, system: str, user: str) -> str:
+def _post_chat(
+    api_key: str,
+    model: str,
+    system: str,
+    user: str,
+    *,
+    max_tokens: int = 80,
+    json_object: bool = False,
+) -> str:
     """Synchronous chat-completions POST. Returns the assistant content
-    string. Raises on transport errors so the caller can downgrade."""
+    string. Raises on transport errors so the caller can downgrade.
+
+    ``json_object=True`` adds ``response_format={"type":"json_object"}``
+    which forces compliant providers to return valid JSON. Used by the
+    llm_pair_diff comparator to avoid prose responses.
+    """
     import json
     import urllib.error
     import urllib.request
 
-    body = json.dumps({
+    payload = {
         "model": model,
         "stream": False,
-        "max_tokens": 80,
+        "max_tokens": max_tokens,
         "temperature": 0.0,
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
-    }).encode("utf-8")
+    }
+    if json_object:
+        payload["response_format"] = {"type": "json_object"}
+    body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
         f"{_api_base()}/chat/completions",
         data=body,

@@ -32,23 +32,21 @@ _VALID_SEVERITY = {"low", "medium", "high"}
 
 
 _SYSTEM_PROMPT = (
-    "Ты — асессор сравнения двух русскоязычных документов. "
-    "Твоя задача — найти СЕМАНТИЧЕСКИЕ различия (что добавлено, удалено, "
-    "изменено, противоречит). Игнорируй косметические правки порядка слов, "
-    "форматирование, синонимы. Ответ — ТОЛЬКО валидный JSON-массив без "
-    "комментариев и markdown.\n\n"
-    "Формат каждого элемента:\n"
+    "Ты — асессор сравнения двух русскоязычных документов. Найди "
+    "СЕМАНТИЧЕСКИЕ различия. Игнорируй косметику и синонимы.\n\n"
+    "Ответ — ТОЛЬКО ОДИН валидный JSON-объект без markdown:\n"
+    "{\"events\": [ ... ]}\n\n"
+    "Каждый элемент массива events:\n"
     "{\n"
-    "  \"status\": one of [\"added\",\"deleted\",\"modified\",\"partial\",\"contradicts\",\"same\"],\n"
-    "  \"severity\": one of [\"low\",\"medium\",\"high\"],\n"
-    "  \"topic\": short Russian noun phrase identifying the topic,\n"
-    "  \"lhs_quote\": short literal quote from LHS (or empty if added),\n"
-    "  \"rhs_quote\": short literal quote from RHS (or empty if deleted),\n"
-    "  \"explanation\": one Russian sentence explaining the difference\n"
+    "  \"status\": \"added\"|\"deleted\"|\"modified\"|\"partial\"|\"contradicts\"|\"same\",\n"
+    "  \"severity\": \"low\"|\"medium\"|\"high\",\n"
+    "  \"topic\": краткая русская тема (≤ 10 слов),\n"
+    "  \"lhs_quote\": дословная цитата из LHS (пусто если added),\n"
+    "  \"rhs_quote\": дословная цитата из RHS (пусто если deleted),\n"
+    "  \"explanation\": одно русское предложение, что и почему отличается\n"
     "}\n\n"
-    "Возвращай 5-30 наиболее значимых событий, отсортированных по "
-    "severity (high первыми). Игнорируй мелочи. Не выдумывай — "
-    "цитируй только то что реально есть в текстах."
+    "Возвращай 5-25 значимых событий, high-severity первыми. "
+    "Цитируй только то, что реально есть в текстах. Ничего, кроме JSON."
 )
 
 _USER_TEMPLATE = (
@@ -56,7 +54,7 @@ _USER_TEMPLATE = (
     "---\n{lhs}\n---\n\n"
     "RHS документ ({rhs_label}):\n"
     "---\n{rhs}\n---\n\n"
-    "Найди семантические различия. Ответ — JSON-массив."
+    "Верни {{\"events\": [ ... ]}}."
 )
 
 
@@ -134,12 +132,28 @@ def llm_pair_diff(
     )
 
     try:
-        raw = _sem._post_chat(api_key, model, _SYSTEM_PROMPT, user)
+        raw = _sem._post_chat(
+            api_key, model, _SYSTEM_PROMPT, user,
+            max_tokens=int(os.getenv("LLM_PAIR_DIFF_MAX_TOKENS", "1500")),
+            json_object=True,
+        )
     except Exception as e:
         logger.warning("llm_pair_diff HTTP failed for %s: %s", pair.get("pair_id"), e)
-        return []
+        # Some providers reject response_format; retry without it.
+        try:
+            raw = _sem._post_chat(
+                api_key, model, _SYSTEM_PROMPT, user,
+                max_tokens=int(os.getenv("LLM_PAIR_DIFF_MAX_TOKENS", "1500")),
+                json_object=False,
+            )
+        except Exception as e2:
+            logger.warning("llm_pair_diff retry failed: %s", e2)
+            return []
 
     items = _parse_json_array(raw)
+    # When response is a JSON object with "events" key, unwrap it.
+    if len(items) == 1 and isinstance(items[0], dict) and "events" in items[0] and isinstance(items[0]["events"], list):
+        items = items[0]["events"]
     if not items:
         logger.warning("llm_pair_diff parse failed for %s; raw[0:200]=%r", pair.get("pair_id"), raw[:200])
         return []
