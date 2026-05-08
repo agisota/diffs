@@ -30,7 +30,51 @@ def _annotate_events(doc: fitz.Document, events: list[dict[str, Any]], side: str
         annot.set_colors(stroke=color, fill=color)
         annot.set_opacity(0.18)
         annot.set_border(width=1)
+        # PR-2.4: surface event_id + status as the annotation's tooltip/title
+        # so reviewers can link a marked region back to the evidence_matrix
+        # row by hovering, plus we paint a small label tag in the corner.
+        title = f"{e.get('event_id') or '?'} • {e.get('status') or '?'}"
+        sev = e.get("severity") or "low"
+        body_parts = [
+            f"severity: {sev}",
+            f"confidence: {e.get('confidence') or '—'}",
+            f"comparison_type: {e.get('comparison_type') or '—'}",
+        ]
+        if (e.get("explanation_short") or "").strip():
+            body_parts.append("")
+            body_parts.append(e["explanation_short"])
+        try:
+            annot.set_info(title=title, content="\n".join(body_parts))
+        except Exception:
+            pass
         annot.update()
+
+        # Tiny label flag in the upper-left of the rect with the short
+        # event_id (last 8 chars). Painted as a free-text annot so it
+        # stays visible even when the rect highlight is faint.
+        try:
+            short_id = (e.get("event_id") or "")[-8:]
+            label_w, label_h = 56, 11
+            label_rect = fitz.Rect(
+                rect.x0,
+                max(0.0, rect.y0 - label_h - 1),
+                rect.x0 + label_w,
+                max(label_h, rect.y0 - 1),
+            )
+            ta = page.add_freetext_annot(
+                label_rect,
+                short_id,
+                fontsize=7,
+                fontname="helv",
+                text_color=(1, 1, 1),
+                fill_color=color,
+                border_color=color,
+                align=1,
+            )
+            ta.set_opacity(0.85)
+            ta.update()
+        except Exception:
+            pass
         count += 1
     return count
 
