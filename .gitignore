@@ -1,0 +1,28 @@
+# oh-my-claudecode internal state
+.omc/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Runtime / data dirs (created by DocDiffOps pipeline)
+data/
+batches/
+.cache/
+*.log
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp

@@ -1,0 +1,28 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      DATA_DIR: /data
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./data:/data
+    depends_on:
+      - redis
+
+  worker:
+    build: .
+    command: celery -A docdiffops.worker.celery_app worker --loglevel=INFO --concurrency=2
+    environment:
+      DATA_DIR: /data
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./data:/data
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"

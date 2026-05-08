@@ -1,0 +1,11 @@
+batch:
+  title: "Migration policy comparison"
+  compare_mode: "all_pairs"
+  primary_doc_id: null
+
+quality_policy:
+  same_threshold: 92
+  partial_threshold: 78
+  generate_pair_pdfs: "material_changes_only"
+
+documents: []
