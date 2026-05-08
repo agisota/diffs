@@ -240,6 +240,27 @@ def save_state(batch_id: str, state: dict[str, Any]) -> None:
         write_json(state_path(batch_id), state)
 
 
+def register_source_for_url(
+    url: str,
+    rank: int,
+    doc_type: str,
+    repo: Any | None = None,
+) -> None:
+    """PR-1.5: best-effort dual-write of a registry row.
+
+    The upload endpoint calls this after classify() returns. JSON state
+    has no equivalent table — the registry is DB-only. Failures are
+    logged and swallowed so the JSON write path stays authoritative.
+    """
+    db_repo = repo if repo is not None else _get_repo()
+    if db_repo is None:
+        return
+    try:
+        db_repo.register_source(url=url, rank=rank, doc_type=doc_type)
+    except Exception as e:
+        logger.warning("DB register_source failed: %s", e)
+
+
 def add_artifact(
     state: dict[str, Any],
     artifact_type: str,
