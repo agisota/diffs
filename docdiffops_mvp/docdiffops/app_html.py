@@ -633,6 +633,11 @@ function toggleEventRow(tr, e) {
       ${lhs.quote ? `<div class='quote-box lhs'><div class='label'>LHS · p.${escapeHtml(lhs.page_no || '?')} · ${escapeHtml(e.lhs_doc_id || '')}</div>${escapeHtml(lhs.quote)}</div>` : ''}
       ${rhs.quote ? `<div class='quote-box rhs'><div class='label'>RHS · p.${escapeHtml(rhs.page_no || '?')} · ${escapeHtml(e.rhs_doc_id || '')}</div>${escapeHtml(rhs.quote)}</div>` : ''}
       ${e.explanation_short ? `<div class='muted' style='margin-top:8px;font-style:italic'>${escapeHtml(e.explanation_short)}</div>` : ''}
+      ${e.semantic ? `<div style='margin-top:10px;padding:10px 12px;background:rgba(76,195,255,0.06);border-left:3px solid var(--blue);border-radius:4px'>
+        <div class='muted' style='font-size:11px;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px'>LLM verdict <span class='mono' style='font-size:10.5px'>(${escapeHtml(e.semantic.model||'?')})</span></div>
+        <div><span class='chip chip-${escapeHtml(e.semantic.status||'low')}'>${escapeHtml(e.semantic.status||'?')}</span> <span class='muted' style='font-size:11.5px'>conf=${escapeHtml(e.semantic.confidence||0)}</span></div>
+        ${e.semantic.rationale ? `<div style='margin-top:4px;font-size:13px'>${escapeHtml(e.semantic.rationale)}</div>` : ''}
+      </div>` : ''}
       <div class='review-panel' data-evid='${escapeHtml(e.event_id)}' style='margin-top:14px;padding-top:12px;border-top:1px solid var(--line)'>
         <div class='muted' style='font-size:11px;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px'>Review</div>
         <div style='display:grid;grid-template-columns:1fr 1fr 2fr auto;gap:8px;align-items:end'>

@@ -23,6 +23,12 @@ services:
       DATA_DIR: /data
       REDIS_URL: redis://redis:6379/0
       DATABASE_URL: postgresql+psycopg2://docdiff:docdiff@db:5432/docdiff
+      # PR-5.5: semantic LLM comparator (opt-in via override).
+      SEMANTIC_COMPARATOR_ENABLED: "${SEMANTIC_COMPARATOR_ENABLED:-false}"
+      LLM_API_BASE: "${LLM_API_BASE:-https://api.openai.com/v1}"
+      LLM_API_KEY: "${LLM_API_KEY:-}"
+      LLM_MODEL: "${LLM_MODEL:-gpt-4o-mini}"
+      SEMANTIC_MAX_CLAIMS_PER_PAIR: "${SEMANTIC_MAX_CLAIMS_PER_PAIR:-10}"
     volumes:
       - ./data:/data
     depends_on:
@@ -38,6 +44,11 @@ services:
       DATA_DIR: /data
       REDIS_URL: redis://redis:6379/0
       DATABASE_URL: postgresql+psycopg2://docdiff:docdiff@db:5432/docdiff
+      SEMANTIC_COMPARATOR_ENABLED: "${SEMANTIC_COMPARATOR_ENABLED:-false}"
+      LLM_API_BASE: "${LLM_API_BASE:-https://api.openai.com/v1}"
+      LLM_API_KEY: "${LLM_API_KEY:-}"
+      LLM_MODEL: "${LLM_MODEL:-gpt-4o-mini}"
+      SEMANTIC_MAX_CLAIMS_PER_PAIR: "${SEMANTIC_MAX_CLAIMS_PER_PAIR:-10}"
     volumes:
       - ./data:/data
     depends_on:

@@ -5,16 +5,37 @@
   "iteration": 3,
   "review_cycle": 0,
   "max_iterations": 10,
-  "phase_cycle": ["ralplan", "ralph", "code-review"],
+  "phase_cycle": [
+    "ralplan",
+    "ralph",
+    "code-review"
+  ],
   "handoff_artifacts": {
     "context_snapshot_path": ".omx/context/sprint45-20260508T225319Z.md",
     "ralplan": {
-      "scope_in": ["PR-4.1", "PR-4.2", "PR-4.6", "PR-4.3", "PR-5.4", "PR-5.6"],
-      "scope_out": ["PR-4.4 polling", "PR-4.5 incremental", "PR-5.1 golden", "PR-5.2 OTEL", "PR-5.3 Grafana", "PR-5.5 LLM"],
+      "scope_in": [
+        "PR-4.1",
+        "PR-4.2",
+        "PR-4.6",
+        "PR-4.3",
+        "PR-5.4",
+        "PR-5.6"
+      ],
+      "scope_out": [
+        "PR-4.4 polling",
+        "PR-4.5 incremental",
+        "PR-5.1 golden",
+        "PR-5.2 OTEL",
+        "PR-5.3 Grafana",
+        "PR-5.5 LLM"
+      ],
       "constraints": "30d retention, anonymous service, no test regressions"
     },
     "ralph": {
-      "prs_merged": [20, 21],
+      "prs_merged": [
+        20,
+        21
+      ],
       "tests": "197/197 unit pass",
       "production_url": "https://diff.zed.md",
       "alembic_head": "a7d3e91b4c20"
@@ -26,7 +47,11 @@
       "evidence": "tests green, migration up/down clean, smoke passes, review endpoint returns 200, audit table populated"
     }
   },
-  "review_verdict": {"recommendation": "APPROVE", "architectural_status": "CLEAR", "clean": true},
+  "review_verdict": {
+    "recommendation": "APPROVE",
+    "architectural_status": "CLEAR",
+    "clean": true
+  },
   "return_to_ralplan_reason": null,
   "completed_at": "2026-05-09"
 }
