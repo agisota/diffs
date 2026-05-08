@@ -29,7 +29,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
 from . import get_session
@@ -335,6 +335,131 @@ class BatchRepository:
             return list(rows)
 
     # ------------------------------------------------------------------
+    # Read path (PR-1.3)
+    # ------------------------------------------------------------------
+
+    def to_state_dict(self, batch_id: str) -> dict | None:
+        """Build a state.py-shaped dict for ``batch_id`` from DB rows.
+
+        The output shape mirrors what ``state.load_state`` returned in
+        PR-1.2, so the FastAPI endpoints that consume the dict don't see
+        any change. The DB does not track three JSON-only fields
+        (``config``, ``runs``, ``metrics``); they default to empty
+        containers when read from DB. Callers that need those fields
+        verbatim should fall back to the JSON file.
+
+        Returns ``None`` when the batch row does not exist in the DB —
+        callers (state.load_state) treat ``None`` as "fall back to JSON".
+        """
+        with get_session() as session:
+            batch = session.get(Batch, batch_id)
+            if batch is None:
+                return None
+
+            documents = list(
+                session.scalars(
+                    select(Document).where(Document.batch_id == batch_id)
+                ).all()
+            )
+            pair_rows = list(
+                session.scalars(
+                    select(PairRun).where(PairRun.batch_id == batch_id)
+                ).all()
+            )
+            event_rows = list(
+                session.scalars(
+                    select(DiffEvent)
+                    .join(PairRun, PairRun.id == DiffEvent.pair_run_id)
+                    .where(PairRun.batch_id == batch_id)
+                ).all()
+            )
+            artifact_rows = list(
+                session.scalars(
+                    select(Artifact).where(Artifact.batch_id == batch_id)
+                ).all()
+            )
+
+            # We need lhs/rhs doc_id for each pair_run, which the schema
+            # only has via document_versions. Resolve once.
+            dv_ids: set[str] = set()
+            for pr in pair_rows:
+                dv_ids.add(pr.lhs_document_version_id)
+                dv_ids.add(pr.rhs_document_version_id)
+            dv_to_doc: dict[str, str] = {}
+            if dv_ids:
+                dv_rows = session.scalars(
+                    select(DocumentVersion).where(DocumentVersion.id.in_(dv_ids))
+                ).all()
+                dv_to_doc = {dv.id: dv.document_id for dv in dv_rows}
+
+            doc_dicts = [_document_to_dict(d) for d in documents]
+            pair_dicts = [_pair_run_to_dict(pr, dv_to_doc) for pr in pair_rows]
+            event_dicts = [_event_to_dict(e) for e in event_rows]
+            artifact_dicts = [_artifact_to_dict(a) for a in artifact_rows]
+
+            return {
+                "batch_id": batch.id,
+                "title": batch.title or batch.id,
+                "status": batch.status,
+                "created_at": _fmt_dt(batch.created_at),
+                "updated_at": _fmt_dt(batch.updated_at),
+                # JSON-only fields the DB does not track; preserve shape.
+                "config": {},
+                "runs": [],
+                "metrics": {},
+                # Core lists.
+                "documents": doc_dicts,
+                # ``pairs`` mirrors the JSON shape the existing renderers
+                # and FastAPI clients consume; ``pair_runs`` is the richer
+                # DB-backed view added in PR-1.3 with status timestamps.
+                "pairs": [
+                    {
+                        "pair_id": p["pair_id"],
+                        "lhs_doc_id": p["lhs_doc_id"],
+                        "rhs_doc_id": p["rhs_doc_id"],
+                    }
+                    for p in pair_dicts
+                ],
+                "pair_runs": pair_dicts,
+                "diff_events": event_dicts,
+                "artifacts": artifact_dicts,
+            }
+
+    def list_all_batches(self) -> list[dict]:
+        """Return a summary list of all batches in the DB.
+
+        Mirrors ``state.list_batches`` semantics: one dict per batch
+        with ``batch_id``, ``title``, ``created_at``, ``updated_at``,
+        ``status`` plus aggregate counts for documents/pair_runs/events.
+        """
+        with get_session() as session:
+            batches = session.scalars(select(Batch)).all()
+            out: list[dict] = []
+            for b in batches:
+                doc_count = session.scalar(
+                    select(func.count(Document.id)).where(Document.batch_id == b.id)
+                ) or 0
+                pair_count = session.scalar(
+                    select(func.count(PairRun.id)).where(PairRun.batch_id == b.id)
+                ) or 0
+                event_count = session.scalar(
+                    select(func.count(DiffEvent.id))
+                    .join(PairRun, PairRun.id == DiffEvent.pair_run_id)
+                    .where(PairRun.batch_id == b.id)
+                ) or 0
+                out.append({
+                    "batch_id": b.id,
+                    "title": b.title or b.id,
+                    "status": b.status,
+                    "created_at": _fmt_dt(b.created_at),
+                    "updated_at": _fmt_dt(b.updated_at),
+                    "documents_count": int(doc_count),
+                    "pair_runs_count": int(pair_count),
+                    "diff_events_count": int(event_count),
+                })
+            return out
+
+    # ------------------------------------------------------------------
     # Artifacts
     # ------------------------------------------------------------------
 
@@ -394,6 +519,93 @@ def _artifact_id(batch_id: str, kind: str, path: str) -> str:
     from ..utils import stable_id
 
     return "art_" + stable_id(batch_id, kind, path, n=20)
+
+
+# ---------------------------------------------------------------------------
+# Row → dict helpers for the read path (PR-1.3).
+# ---------------------------------------------------------------------------
+
+
+def _fmt_dt(dt: datetime | None) -> str | None:
+    """Format a UTC datetime as the ISO8601 ``Z`` string state.py uses."""
+    if dt is None:
+        return None
+    return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _document_to_dict(d: Document) -> dict:
+    """Project a Document row into the JSON-state field shape.
+
+    JSON-only fields not stored in the DB (``raw_path``, ``canonical_pdf``,
+    ``extracted_json``, ``block_count``, ``title``) are emitted as
+    ``None``/``0`` so consumers see a stable schema. The pipeline still
+    populates them in the JSON when ``WRITE_JSON_STATE`` is on; callers
+    that need those values should fall back to the JSON load path until
+    those columns land on the schema.
+    """
+    return {
+        "doc_id": d.id,
+        "title": (d.filename.rsplit(".", 1)[0] if d.filename else d.id),
+        "filename": d.filename,
+        "raw_path": None,
+        "sha256": d.sha256,
+        "ext": d.extension,
+        "source_rank": d.source_rank,
+        "doc_type": d.doc_type,
+        "status": d.status,
+        "canonical_pdf": None,
+        "extracted_json": None,
+        "block_count": 0,
+    }
+
+
+def _pair_run_to_dict(pr: PairRun, dv_to_doc: dict[str, str]) -> dict:
+    return {
+        "pair_id": pr.id,
+        "lhs_doc_id": dv_to_doc.get(pr.lhs_document_version_id),
+        "rhs_doc_id": dv_to_doc.get(pr.rhs_document_version_id),
+        "status": pr.status,
+        "comparator_version": pr.comparator_version,
+        "started_at": _fmt_dt(pr.started_at),
+        "finished_at": _fmt_dt(pr.finished_at),
+    }
+
+
+def _event_to_dict(e: DiffEvent) -> dict:
+    return {
+        "event_id": e.id,
+        "pair_id": e.pair_run_id,
+        "comparison_type": e.comparison_type,
+        "status": e.status,
+        "severity": e.severity,
+        "confidence": e.confidence,
+        "lhs": {
+            "doc_id": e.lhs_doc_id,
+            "page_no": e.lhs_page,
+            "block_id": e.lhs_block_id,
+            "bbox": e.lhs_bbox,
+            "quote": e.lhs_quote,
+        },
+        "rhs": {
+            "doc_id": e.rhs_doc_id,
+            "page_no": e.rhs_page,
+            "block_id": e.rhs_block_id,
+            "bbox": e.rhs_bbox,
+            "quote": e.rhs_quote,
+        },
+        "explanation_short": e.explanation_short,
+        "review_required": bool(e.review_required),
+    }
+
+
+def _artifact_to_dict(a: Artifact) -> dict:
+    return {
+        "type": a.kind,
+        "title": a.path.rsplit("/", 1)[-1] if a.path else a.kind,
+        "path": a.path,
+        "sha256": a.sha256,
+        "size_bytes": a.size_bytes,
+    }
 
 
 __all__ = ["BatchRepository"]
