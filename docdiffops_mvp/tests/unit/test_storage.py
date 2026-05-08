@@ -143,13 +143,6 @@ def test_get_storage_explicit_fs(monkeypatch, tmp_path):
     assert isinstance(get_storage(), FSStorage)
 
 
-def test_get_storage_minio_not_implemented(monkeypatch):
-    monkeypatch.setenv("STORAGE_BACKEND", "minio")
-    reset_storage_for_tests()
-    with pytest.raises(NotImplementedError):
-        get_storage()
-
-
 def test_get_storage_unknown_backend_raises(monkeypatch):
     monkeypatch.setenv("STORAGE_BACKEND", "azureblob")
     reset_storage_for_tests()

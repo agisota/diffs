@@ -10,6 +10,6 @@ Key naming convention (locked in PR-1.4):
 where ``stage`` ∈ {raw, normalized, extracted, pairs/{pair_id}, reports, cache}.
 """
 
-from .backend import FSStorage, Storage, get_storage
+from .backend import FSStorage, S3Storage, Storage, get_storage
 
-__all__ = ["Storage", "FSStorage", "get_storage"]
+__all__ = ["Storage", "FSStorage", "S3Storage", "get_storage"]
