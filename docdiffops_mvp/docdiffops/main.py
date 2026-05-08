@@ -1,17 +1,27 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import FastAPI, File, HTTPException, Query, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 
 from .schemas import CreateBatchRequest
 from .settings import DATA_DIR
-from .state import batch_dir, create_batch, load_state, save_state
+from .source_registry import classify
+from .state import (
+    batch_dir,
+    create_batch,
+    load_state,
+    register_source_for_url,
+    save_state,
+)
 from .utils import safe_name, sha256_file, stable_id
 from .worker import run_batch_task
 from .pipeline import run_batch as run_batch_sync
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="DocDiffOps", version="0.1.0")
 
@@ -36,7 +46,14 @@ def get_batch(batch_id: str):
 
 
 @app.post("/batches/{batch_id}/documents")
-async def upload_documents(batch_id: str, files: Annotated[list[UploadFile], File(description="Documents to compare")]):
+async def upload_documents(
+    batch_id: str,
+    files: Annotated[list[UploadFile], File(description="Documents to compare")],
+    source_urls: Annotated[
+        list[str] | None,
+        Form(description="Optional provenance URLs, one per uploaded file in order"),
+    ] = None,
+):
     try:
         state = load_state(batch_id)
     except FileNotFoundError:
@@ -48,7 +65,13 @@ async def upload_documents(batch_id: str, files: Annotated[list[UploadFile], Fil
     existing_sha = {d.get("sha256") for d in state.get("documents", [])}
     added = []
 
-    for f in files:
+    # Pad source_urls so callers can omit per-file URLs without erroring.
+    # PR-1.5: classify falls back to rank-3 OTHER when URL is None.
+    urls: list[str | None] = list(source_urls or [])
+    while len(urls) < len(files):
+        urls.append(None)
+
+    for f, url in zip(files, urls):
         filename = safe_name(f.filename or "upload")
         dst = raw_dir / filename
         # Avoid overwriting same basename.
@@ -60,6 +83,16 @@ async def upload_documents(batch_id: str, files: Annotated[list[UploadFile], Fil
         if digest in existing_sha:
             dst.unlink(missing_ok=True)
             continue
+
+        # PR-1.5: classify using filename + URL host + first 4 KB of bytes.
+        # Empty URL strings (form quirk) collapse to None so rank stays 3.
+        clean_url = (url or "").strip() or None
+        doc_type, source_rank = classify(
+            filename=filename,
+            source_url=clean_url,
+            content_head=content[:4096],
+        )
+
         doc_id = "doc_" + stable_id(filename, digest, n=16)
         doc = {
             "doc_id": doc_id,
@@ -68,13 +101,21 @@ async def upload_documents(batch_id: str, files: Annotated[list[UploadFile], Fil
             "raw_path": str(dst.relative_to(base)),
             "sha256": digest,
             "ext": Path(filename).suffix.lower(),
-            "source_rank": 3,
-            "doc_type": None,
+            "source_rank": source_rank,
+            "doc_type": doc_type,
+            "source_url": clean_url,
             "status": "uploaded",
         }
         state.setdefault("documents", []).append(doc)
         existing_sha.add(digest)
         added.append(doc)
+
+        # PR-1.5: register the URL once so PR-4.4 polling has a target.
+        if clean_url:
+            try:
+                register_source_for_url(clean_url, source_rank, doc_type)
+            except Exception as e:
+                logger.warning("source_registry registration failed: %s", e)
 
     save_state(batch_id, state)
     return {"added": added, "documents_total": len(state.get("documents", []))}
