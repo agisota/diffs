@@ -239,11 +239,25 @@ def review_event(event_id: str, req: ReviewRequest):
     except Exception as e:
         logger.warning("review write failed: %s", e)
         raise HTTPException(status_code=400, detail=f"review failed: {e}")
-    # Audit (best-effort).
+    # Audit (best-effort). Resolve event → pair_run → batch so the entry
+    # surfaces in the per-batch audit view.
+    audit_batch_id = None
+    try:
+        from .db import get_session
+        from .db.models import DiffEvent, PairRun
+        with get_session() as session:
+            ev = session.get(DiffEvent, event_id)
+            if ev is not None:
+                pr = session.get(PairRun, ev.pair_run_id)
+                if pr is not None:
+                    audit_batch_id = pr.batch_id
+    except Exception:
+        pass
     try:
         repo.add_audit_entry(
             entry_id="ae_" + stable_id(decision_id, "review", n=20),
             action="event.review",
+            batch_id=audit_batch_id,
             actor=req.reviewer_name,
             target_kind="diff_event",
             target_id=event_id,
