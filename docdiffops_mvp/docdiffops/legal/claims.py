@@ -34,6 +34,7 @@ except Exception:  # pragma: no cover
 
 from .chunker import Chunk
 from .rank_gate import apply_rank_gate
+from . import semantic as _sem
 
 # ---------------------------------------------------------------------------
 # Extraction heuristics
@@ -207,13 +208,18 @@ def claim_validation_events(
 ) -> list[dict[str, Any]]:
     """Run extract → validate → emit events for one analytics ↔ NPA pair.
 
-    The analytics doc is rank-3, the NPA is rank-1. Status is shaped by
-    apply_rank_gate so 'contradicts' / 'modified' / 'added' downgrade to
-    manual_review automatically.
+    The analytics doc is rank-3, the NPA is rank-1. Deterministic status
+    is shaped by apply_rank_gate. When the LLM comparator is enabled
+    (PR-5.5: ``SEMANTIC_COMPARATOR_ENABLED=true`` + ``LLM_API_KEY``),
+    each event additionally carries an ``event['semantic']`` block with
+    the LLM's verdict for A/B against the deterministic path.
     """
     claims = extract_claims(analytics_blocks, analytics_doc.get("doc_id") or "?")
     pair_id = pair.get("pair_id") or "?"
     out: list[dict[str, Any]] = []
+    semantic_enabled = _sem.is_enabled()
+    semantic_budget = _sem.budget_per_pair() if semantic_enabled else 0
+    semantic_calls = 0
     for claim in claims:
         status, score, chunk = validate_claim(claim, npa_chunks)
         _, severity = _classify_match(score)
@@ -240,6 +246,17 @@ def claim_validation_events(
             "rhs": _chunk_evidence(chunk, npa_doc) if chunk else None,
             "explanation_short": _explain(status, claim, chunk, score),
         }
+        # PR-5.5: ride-along LLM verdict (A/B with deterministic status).
+        if semantic_enabled and chunk is not None and semantic_calls < semantic_budget:
+            verdict = _sem.judge(
+                claim.text,
+                ((chunk.title or "") + " " + (chunk.text or "")).strip(),
+                chunk_kind=chunk.kind,
+                chunk_number=chunk.number or "",
+            )
+            semantic_calls += 1
+            if verdict is not None:
+                ev["semantic"] = verdict.to_dict()
         out.append(apply_rank_gate(ev, analytics_doc, npa_doc))
     return out
 
