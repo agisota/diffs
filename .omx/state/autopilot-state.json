@@ -2,7 +2,7 @@
   "mode": "autopilot",
   "active": false,
   "current_phase": "complete",
-  "iteration": 3,
+  "iteration": 4,
   "review_cycle": 0,
   "max_iterations": 10,
   "phase_cycle": [
@@ -38,7 +38,9 @@
       ],
       "tests": "197/197 unit pass",
       "production_url": "https://diff.zed.md",
-      "alembic_head": "a7d3e91b4c20"
+      "alembic_head": "a7d3e91b4c20",
+      "prs_merged_total": 24,
+      "llm_active": true
     },
     "code_review": {
       "recommendation": "APPROVE",
@@ -53,5 +55,5 @@
     "clean": true
   },
   "return_to_ralplan_reason": null,
-  "completed_at": "2026-05-09"
+  "completed_at": "2026-05-08T23:33:42.102506Z"
 }
