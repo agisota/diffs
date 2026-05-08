@@ -14,7 +14,29 @@ Swagger on `/docs`. Service is anonymous (no auth) and not certified for PII.
 | 2 | ✅ done | XLSX (10 sheets), Executive DOCX, full HTML report, PDF event_id labels, web UI SPA |
 | 3 | ✅ done | RU legal terms + refs parser, structural chunkers (NPA/Concept/GovPlan), legal_structural_diff, source-rank gate, claim_extractor + claim_validation |
 | 4 | ✅ done | review API, anchor rerender, audit log, reviewer UI controls in SPA |
-| 5 | partial | cache + batch prune CLI (PR-5.4), docs (PR-5.6); deferred: OTEL/Prometheus, semantic LLM comparator, scheduled URL polling |
+| 5 | partial | cache + batch prune CLI (PR-5.4), docs (PR-5.6), **semantic LLM comparator (PR-5.5 LIVE)**; deferred: OTEL/Prometheus, scheduled URL polling, incremental recompute |
+
+### LLM verdict layer (PR-5.5 active in production)
+
+When `SEMANTIC_COMPARATOR_ENABLED=true` and `LLM_API_KEY` are set, every
+`claim_validation` event additionally carries `event.semantic`:
+
+```json
+{
+  "semantic": {
+    "status": "partial",
+    "confidence": 0.65,
+    "rationale": "Норма подтверждает усиление регулирования... но не формулирует прямо «сопротивление миграции».",
+    "model": "faster200"
+  }
+}
+```
+
+Provider-agnostic OpenAI-compatible endpoint (`api.zed.md/v1`, OpenAI,
+Anthropic via OpenAI-compat layer, etc.). Cost-guarded by
+`SEMANTIC_MAX_CLAIMS_PER_PAIR` (default 10). Deterministic verdict
+remains primary; LLM rides along for A/B comparison until reviewers
+sign off on the swap.
 
 ## Quick start
 
@@ -68,6 +90,11 @@ prune (python -m docdiffops.cli_prune --days 30)
 | `EXTRACTOR_VERSION` | 2.A.0 | Bump invalidates extract cache |
 | `COMPARATOR_VERSION` | 1.0.0 | Bump invalidates compare cache |
 | `RETENTION_DAYS` | 30 | cli_prune retention SLA |
+| `SEMANTIC_COMPARATOR_ENABLED` | false | Enables LLM ride-along verdict on claim_validation |
+| `LLM_API_BASE` | `https://api.openai.com/v1` | OpenAI-compatible endpoint |
+| `LLM_API_KEY` | — | Bearer token for the endpoint |
+| `LLM_MODEL` | `gpt-4o-mini` | Model id |
+| `SEMANTIC_MAX_CLAIMS_PER_PAIR` | 10 | Per-pair LLM call cap |
 
 ## Layout
 
