@@ -81,16 +81,21 @@ def budget_per_pair() -> int:
 
 
 _SYSTEM_PROMPT = (
-    "Ты — асессор соответствия аналитических тезисов нормам российского "
-    "права. Отвечай строго в формате одной строки: STATUS | RATIONALE. "
-    "STATUS ∈ {confirmed, partial, contradicts, not_found}. "
-    "RATIONALE — одно предложение по-русски, ≤ 25 слов."
+    "Ты — асессор соответствия. Отвечаешь СТРОГО ОДНОЙ СТРОКОЙ "
+    "ровно в формате: STATUS | RATIONALE\n"
+    "STATUS — одно из латинских слов: confirmed | partial | contradicts | not_found.\n"
+    "RATIONALE — короткое русское объяснение ≤ 20 слов.\n"
+    "Никакого markdown, никаких списков, никаких заголовков. Не пиши «Да/Нет».\n"
+    "Пример: confirmed | Норма прямо повторяет тезис.\n"
+    "Пример: partial | Норма уточняет тезис до интеллектуальной миграции.\n"
+    "Пример: not_found | Норма не упоминает данный тезис."
 )
 
 _USER_TEMPLATE = (
-    "Тезис: {claim}\n"
+    "Тезис из аналитики: {claim}\n"
     "Норма ({chunk_kind} {chunk_number}): {chunk_text}\n"
-    "Вопрос: подтверждает ли норма этот тезис?"
+    "Подтверждает ли норма этот тезис? Ответ строго одной строкой "
+    "STATUS | RATIONALE."
 )
 
 _VALID_STATUS = {"confirmed", "partial", "contradicts", "not_found"}
@@ -136,7 +141,7 @@ def _post_chat(api_key: str, model: str, system: str, user: str) -> str:
     body = json.dumps({
         "model": model,
         "stream": False,
-        "max_tokens": 200,
+        "max_tokens": 80,
         "temperature": 0.0,
         "messages": [
             {"role": "system", "content": system},
@@ -164,40 +169,70 @@ def _post_chat(api_key: str, model: str, system: str, user: str) -> str:
 
 
 def _parse_verdict(content: str, model: str) -> SemanticVerdict | None:
-    """Parse the ``STATUS | RATIONALE`` line. Tolerates extra prose and
-    fuzzy status spellings; returns None when no recognizable status
-    appears."""
+    """Parse the ``STATUS | RATIONALE`` line. Tolerant in this order:
+
+    1. ``STATUS | RATIONALE`` exact format (preferred).
+    2. First-token English status without ``|``.
+    3. Russian alias as first token.
+    4. Substring scan: any English status anywhere in the text.
+    5. Russian alias substring scan (``частично``, ``противоречит`` etc.)
+       — handles models that return prose instead of the format.
+
+    Returns ``None`` only when no recognizable status appears.
+    """
     if not content:
         return None
     raw = content.strip()
+    low = raw.lower()
     line = raw.splitlines()[0].strip()
+    rationale = raw
+
+    # 1. Pipe format.
     if "|" in line:
         head, _, tail = line.partition("|")
-        status = head.strip().lower()
+        status_token = head.strip().lower()
         rationale = tail.strip() or raw
-    else:
-        status = line.split()[0].strip().lower() if line.split() else ""
-        rationale = raw
-    # Normalize: handle a few RU/EN variants.
+        if status_token in _VALID_STATUS:
+            return _verdict(status_token, rationale, model, raw)
+
+    # 2-3. First token (English or RU alias).
     aliases = {
         "подтверждается": "confirmed",
         "подтверждено": "confirmed",
+        "подтвержден": "confirmed",
+        "соответствует": "confirmed",
         "частично": "partial",
+        "точечно": "partial",
+        "не_полностью": "partial",
         "противоречит": "contradicts",
         "противоречие": "contradicts",
+        "опровергает": "contradicts",
         "не_найдено": "not_found",
         "ненайдено": "not_found",
+        "отсутствует": "not_found",
         "нет": "not_found",
     }
-    status = aliases.get(status, status)
-    if status not in _VALID_STATUS:
-        # Last-resort: scan the whole response for a recognizable token.
-        for tok in raw.lower().split():
-            if tok in _VALID_STATUS:
-                status = tok
-                break
-        else:
-            return None
+    first = (line.split() or [""])[0].strip().lower().rstrip(".,:;!?")
+    if first in _VALID_STATUS:
+        return _verdict(first, rationale, model, raw)
+    if first in aliases:
+        return _verdict(aliases[first], rationale, model, raw)
+
+    # 4. English substring scan (whole tokens only — no false positives).
+    import re
+    for st in _VALID_STATUS:
+        if re.search(rf"\b{st}\b", low):
+            return _verdict(st, rationale, model, raw)
+
+    # 5. RU alias substring scan — handles "частично/точечно", "противоречит" etc.
+    for alias, mapped in aliases.items():
+        if alias in low:
+            return _verdict(mapped, rationale, model, raw)
+
+    return None
+
+
+def _verdict(status: str, rationale: str, model: str, raw: str) -> SemanticVerdict:
     confidence = {
         "confirmed": 0.9,
         "partial": 0.65,
@@ -207,9 +242,9 @@ def _parse_verdict(content: str, model: str) -> SemanticVerdict | None:
     return SemanticVerdict(
         status=status,
         confidence=confidence,
-        rationale=rationale[:280],
+        rationale=(rationale or raw)[:280],
         model=model,
-        raw_response=raw,
+        raw_response=raw[:600],
     )
 
 
