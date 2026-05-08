@@ -40,6 +40,7 @@ from .models import (
     Document,
     DocumentVersion,
     PairRun,
+    SourceRegistry,
 )
 
 
@@ -84,6 +85,7 @@ class BatchRepository:
         extension: str | None,
         source_rank: int,
         doc_type: str | None,
+        source_url: str | None = None,
     ) -> Document:
         """Insert a Document.
 
@@ -91,6 +93,9 @@ class BatchRepository:
         exists, return it instead of raising ``IntegrityError``. Same if
         ``doc_id`` already exists. The brief uses sha256 as the natural
         de-dupe key for re-uploads, so we honor both PK and UNIQUE.
+
+        ``source_url`` (PR-1.5) is the optional provenance URL recorded at
+        upload time. ``None`` for locally-uploaded files.
         """
         with get_session() as session:
             existing = session.get(Document, doc_id)
@@ -112,6 +117,7 @@ class BatchRepository:
                 extension=extension,
                 source_rank=source_rank,
                 doc_type=doc_type,
+                source_url=source_url,
                 status="uploaded",
             )
             session.add(doc)
@@ -460,6 +466,64 @@ class BatchRepository:
             return out
 
     # ------------------------------------------------------------------
+    # Source registry (PR-1.5)
+    # ------------------------------------------------------------------
+
+    def register_source(
+        self,
+        url: str,
+        rank: int,
+        doc_type: str,
+    ) -> SourceRegistry:
+        """Insert or return a ``source_registry`` row keyed on URL.
+
+        Idempotent: a second call with the same URL returns the existing
+        row even if ``rank``/``doc_type`` differ. Inferred classification
+        is captured at first sight; PR-3.6 may overwrite via a dedicated
+        update method later.
+        """
+        sid = _source_registry_id(url)
+        with get_session() as session:
+            existing = session.scalar(
+                select(SourceRegistry).where(SourceRegistry.url == url)
+            )
+            if existing is not None:
+                session.expunge(existing)
+                return existing
+            row = SourceRegistry(
+                id=sid,
+                url=url,
+                inferred_rank=rank,
+                inferred_doc_type=doc_type,
+            )
+            session.add(row)
+            try:
+                session.flush()
+            except IntegrityError:
+                session.rollback()
+                with get_session() as s2:
+                    again = s2.scalar(
+                        select(SourceRegistry).where(SourceRegistry.url == url)
+                    )
+                    if again is not None:
+                        s2.expunge(again)
+                        return again
+                raise
+            session.refresh(row)
+            session.expunge(row)
+            return row
+
+    def get_source(self, url: str) -> Optional[SourceRegistry]:
+        """Return the registry row for ``url`` or ``None``."""
+        with get_session() as session:
+            row = session.scalar(
+                select(SourceRegistry).where(SourceRegistry.url == url)
+            )
+            if row is not None:
+                session.expunge(row)
+            return row
+
+    # ------------------------------------------------------------------
     # Artifacts
     # ------------------------------------------------------------------
 
@@ -521,6 +585,12 @@ def _artifact_id(batch_id: str, kind: str, path: str) -> str:
     return "art_" + stable_id(batch_id, kind, path, n=20)
 
 
+def _source_registry_id(url: str) -> str:
+    from ..utils import stable_id
+
+    return "src_" + stable_id(url, n=20)
+
+
 # ---------------------------------------------------------------------------
 # Row → dict helpers for the read path (PR-1.3).
 # ---------------------------------------------------------------------------
@@ -552,6 +622,7 @@ def _document_to_dict(d: Document) -> dict:
         "ext": d.extension,
         "source_rank": d.source_rank,
         "doc_type": d.doc_type,
+        "source_url": d.source_url,
         "status": d.status,
         "canonical_pdf": None,
         "extracted_json": None,
