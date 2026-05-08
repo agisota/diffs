@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from . import cache
 from .compare import build_pairs, compare_pair
 from .executive import render_executive_md
 from .extract import extract_any
@@ -21,8 +22,7 @@ logger = logging.getLogger(__name__)
 # in PR-1.6 alongside the cache key work. The DB requires non-null values
 # on document_versions.extractor_version and pair_runs.comparator_version
 # so we pin sensible strings here that PR-1.6 can replace.
-EXTRACTOR_VERSION = "2.A.0"
-COMPARATOR_VERSION = "1.0.0"
+from .settings import COMPARATOR_VERSION, EXTRACTOR_VERSION  # PR-1.6: single source of truth
 
 # Repo wiring choice (PR-1.2): pipeline.run_batch instantiates ONE
 # BatchRepository and threads it through to state.py and to the per-stage
@@ -91,9 +91,22 @@ def normalize_and_extract(
 
         extracted_path = ext_dir / f"{doc['doc_id']}.json"
         if not extracted_path.exists():
-            data = extract_any(raw_path, doc["doc_id"], canonical_pdf=canonical_pdf, prefer_pdf_visual=prefer_pdf_visual)
-            data["raw_path"] = str(raw_path.relative_to(base))
-            data["canonical_pdf"] = str(canonical_pdf.relative_to(base)) if canonical_pdf else None
+            # PR-1.6: content-addressed cache keyed by sha256 + EXTRACTOR_VERSION.
+            # Two batches uploading the same PDF share the parsed result; bumping
+            # EXTRACTOR_VERSION invalidates every cached extract automatically.
+            def _do_extract() -> dict[str, Any]:
+                d = extract_any(
+                    raw_path, doc["doc_id"],
+                    canonical_pdf=canonical_pdf,
+                    prefer_pdf_visual=prefer_pdf_visual,
+                )
+                d["raw_path"] = str(raw_path.relative_to(base))
+                d["canonical_pdf"] = str(canonical_pdf.relative_to(base)) if canonical_pdf else None
+                return d
+
+            ckey = cache.extract_key(doc["sha256"])
+            data, hit = cache.get_or_compute("extract", ckey, _do_extract)
+            doc["cache_extract_hit"] = hit
             write_json(extracted_path, data)
         doc["extracted_json"] = str(extracted_path.relative_to(base))
         doc["block_count"] = len(read_json(extracted_path, {}).get("blocks", []))
@@ -172,10 +185,20 @@ def run_all_pairs(
                 "running",
             )
 
-        events, summary = compare_pair(
-            pair, lhs_doc, rhs_doc, lhs_blocks, rhs_blocks,
-            same_threshold=same_threshold, partial_threshold=partial_threshold,
-        )
+        # PR-1.6: cache the compare result keyed by (lhs_sha, rhs_sha) +
+        # COMPARATOR_VERSION. Order-independent so swapping LHS/RHS hits.
+        def _do_compare() -> dict[str, Any]:
+            ev, sm = compare_pair(
+                pair, lhs_doc, rhs_doc, lhs_blocks, rhs_blocks,
+                same_threshold=same_threshold, partial_threshold=partial_threshold,
+            )
+            return {"events": ev, "summary": sm}
+
+        ckey = cache.compare_key(lhs_doc["sha256"], rhs_doc["sha256"])
+        bundle, hit = cache.get_or_compute("compare", ckey, _do_compare)
+        events = bundle["events"]
+        summary = bundle["summary"]
+        summary["cache_hit"] = hit
 
         pair_dir = base / "pairs" / pair["pair_id"]
         pair_dir.mkdir(parents=True, exist_ok=True)
