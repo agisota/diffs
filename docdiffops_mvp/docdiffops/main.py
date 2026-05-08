@@ -7,12 +7,14 @@ from typing import Annotated
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 
+from .app_html import APP_HTML
 from .schemas import CreateBatchRequest
 from .settings import DATA_DIR
 from .source_registry import classify
 from .state import (
     batch_dir,
     create_batch,
+    list_batches,
     load_state,
     register_source_for_url,
     save_state,
@@ -28,41 +30,20 @@ app = FastAPI(title="DocDiffOps", version="0.1.0")
 
 @app.get("/", include_in_schema=False)
 def root():
-    """Service landing page — minimal index that links to /docs and /health."""
-    body = """<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
-<title>DocDiffOps</title>
-<style>
-  body { font: 15px/1.55 -apple-system, system-ui, "Segoe UI", sans-serif;
-         background: #0f1115; color: #e9eef5; margin: 0;
-         display: flex; align-items: center; justify-content: center;
-         min-height: 100vh; }
-  main { max-width: 560px; padding: 32px; }
-  h1 { font-size: 28px; margin: 0 0 8px; }
-  .sub { color: #95a3b8; margin-bottom: 24px; }
-  ul { list-style: none; padding: 0; }
-  li { margin: 8px 0; }
-  a { color: #4cc3ff; text-decoration: none; border-bottom: 1px dashed #2b3441; }
-  a:hover { border-bottom-style: solid; }
-  code { background: #1f2632; padding: 2px 6px; border-radius: 3px; font-size: 13px; }
-</style></head>
-<body><main>
-  <h1>DocDiffOps</h1>
-  <div class="sub">Production pipeline for all-to-all document comparison.</div>
-  <ul>
-    <li><a href="/docs">Swagger UI</a> — interactive API explorer</li>
-    <li><a href="/redoc">ReDoc</a> — alternative API docs</li>
-    <li><a href="/health">/health</a> — liveness probe (JSON)</li>
-    <li><code>POST /batches</code> · <code>POST /batches/{id}/documents</code> · <code>POST /batches/{id}/run</code></li>
-  </ul>
-  <div class="sub" style="margin-top:24px;font-size:12px">Source: <a href="https://github.com/agisota/diffs">github.com/agisota/diffs</a></div>
-</main></body></html>"""
-    return HTMLResponse(content=body)
+    """Single-page DocDiffOps web UI (upload, batch dashboard, events explorer)."""
+    return HTMLResponse(content=APP_HTML)
 
 
 @app.get("/health")
 def health():
     return {"ok": True, "data_dir": str(DATA_DIR)}
+
+
+@app.get("/batches")
+def list_batches_endpoint():
+    """List all batches (used by the web UI). Routes through state.list_batches
+    which honours READ_FROM_DB and falls back to JSON when DB is empty."""
+    return list_batches()
 
 
 @app.post("/batches")
