@@ -245,6 +245,38 @@ class Artifact(Base):
     __table_args__ = (Index("ix_artifacts_batch_id", "batch_id"),)
 
 
+class AuditLog(Base):
+    """PR-4.6: append-only log of state-changing API actions.
+
+    Records who did what, when. ``actor`` is the free-text reviewer_name
+    (Q1 closure: no auth, anonymous service). ``payload`` is JSON for
+    flexible per-event-kind data (review decision, anchor change, etc.).
+    """
+
+    __tablename__ = "audit_log"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    batch_id: Mapped[str | None] = mapped_column(
+        String(64),
+        ForeignKey("batches.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    actor: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    action: Mapped[str] = mapped_column(String(64), nullable=False)
+    target_kind: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    target_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_audit_batch_id", "batch_id"),
+        Index("ix_audit_action", "action"),
+        Index("ix_audit_created_at", "created_at"),
+    )
+
+
 class SourceRegistry(Base):
     """Registry of distinct provenance URLs encountered during uploads.
 
