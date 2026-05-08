@@ -87,3 +87,32 @@ consolidated migration rather than the two-step Day 2 / Day 3 split.
   `settings.py` — added in PR-1.6 alongside the cache key work.
 - SQLite test fallback documented in test module docstring; production
   CI must pin `TEST_DATABASE_URL` to a Postgres URL.
+
+## 2026-05-09 (Sprint 1 — finished, retrospective)
+
+7 PRs merged total:
+
+| PR | Scope |
+|---|---|
+| #1 | Postgres + Alembic baseline (7-table schema, single migration) |
+| #2 | Security: python-multipart 0.0.27, lxml 6.1.0 |
+| #4 | Repository facade + dual-write (`DUAL_WRITE_ENABLED` kill-switch) |
+| #5 | Read cutover from Postgres (`READ_FROM_DB`, `WRITE_JSON_STATE` flags) |
+| #6 | Source registry: classifier + `source_registry` table + `documents.source_url` |
+| #7 | Storage protocol + FSStorage backend |
+| #8 | Cache keys + idempotency (content-addressed, version-pinned) |
+| #9 | Cache wired into pipeline.normalize_and_extract + run_all_pairs |
+
+**Production**: `https://diff.zed.md` on us-losangeles GCP (Caddy 80/443 → uvicorn:8000, Postgres 16 + Redis 7 + Celery worker). 3-fixture smoke: 3 docs / 3 pairs / 368 events / 9.36 s pipeline.
+
+**Tests**: 137/137 unit on SQLite (~0.5 s).
+
+**Lessons**:
+- Parallel agents on a shared FS racewithv `git checkout -b` — PR-1.4 work was lost when the PR-1.5 agent reset the working tree. Use `git worktree` next time, or run sequentially.
+- Opus agents in this codebase top out around 100-180k tokens and stop mid-task. PR-1.5 agent began incremental commits per step — that pattern preserved work and is the right default.
+- Soft `[DELEGATION NOTICE]` hooks are advisory only.
+
+**Carried into Sprint 2**:
+- PR-1.4b: S3/MinIO backend (Storage abstraction is ready; pipeline writes still through `Path.write_bytes`).
+- WRITE_JSON_STATE default flip to `false`.
+- Pipeline+renderer cutover so all artifacts go through `get_storage().put_bytes`.
