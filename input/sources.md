@@ -13,7 +13,9 @@ Open-source unless noted.
 | `rasporjazenie_30r_2024.pdf` | https://www.profiz.ru/upl/pictures/SR/_01_2024/Распоряжение Правительства Российской Федерации от 16.01.2024 № 30-р.pdf | Government Order 30-r of 16.01.2024 on Concept implementation | 1 (official NPA) |
 | ⚠️ `klerk_normative_summary.html` | https://www.klerk.ru/blogs/astral/658232/ | Klerk.ru summary of regulations for foreign workers | 3 (analytics/blog) |
 | ⚠️ `mineconomy_migration_index.html` | https://www.economy.gov.ru/material/departments/d04/migracionnaya_politika/ | Ministry of Economy migration policy materials index | 2 (departmental) |
-| `vciom_migration_2026.pdf` | provided by user | VCIOM analytics presentation on migration indicators | 3 (analytics presentation) |
+| `vciom_migration_2026.pdf` ¹ | provided by user | VCIOM analytics presentation on migration indicators | 3 (analytics presentation) |
+
+¹ Compressed via `gs -dPDFSETTINGS=/ebook` from 7.5 MB → 2.75 MB to fit GitHub HTTP push window (server enforces ~30 s on receive-pack at this network's upload rate). Visual content preserved; if pixel-exact sourcing is needed, re-download from the analytics team and replace.
 
 ## Internal materials (provided by user)
 
