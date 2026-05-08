@@ -9,6 +9,15 @@ Public surface:
 """
 
 from .chunker import Chunk, chunk_text
+from .rank_gate import apply_rank_gate
 from .refs import LegalRef, parse_refs
+from .structural_diff import legal_structural_diff
 
-__all__ = ["Chunk", "chunk_text", "LegalRef", "parse_refs"]
+__all__ = [
+    "Chunk",
+    "chunk_text",
+    "LegalRef",
+    "parse_refs",
+    "legal_structural_diff",
+    "apply_rank_gate",
+]

@@ -7,6 +7,7 @@ from typing import Any
 
 from . import cache
 from .compare import build_pairs, compare_pair
+from .legal import chunk_text as legal_chunk_text, legal_structural_diff
 from .executive import render_executive_md
 from .extract import extract_any
 from .normalize import convert_to_canonical_pdf
@@ -199,6 +200,27 @@ def run_all_pairs(
         events = bundle["events"]
         summary = bundle["summary"]
         summary["cache_hit"] = hit
+
+        # PR-3.3 / PR-3.6: when both sides have a structurable doc_type,
+        # ALSO emit legal_structural_diff events on top of the fuzzy ones.
+        # The two layers are complementary: fuzzy catches block-level
+        # changes; structural anchors a status to the article/section
+        # number itself. apply_rank_gate is folded inside the comparator.
+        STRUCTURABLE = {"LEGAL_NPA", "LEGAL_CONCEPT", "GOV_PLAN"}
+        if (lhs_doc.get("doc_type") in STRUCTURABLE) and (rhs_doc.get("doc_type") in STRUCTURABLE):
+            try:
+                lhs_text = "\n".join(b.get("text", "") for b in lhs_blocks)
+                rhs_text = "\n".join(b.get("text", "") for b in rhs_blocks)
+                lhs_chunks = legal_chunk_text(lhs_doc.get("doc_type"), lhs_text, doc_id=lhs_doc["doc_id"])
+                rhs_chunks = legal_chunk_text(rhs_doc.get("doc_type"), rhs_text, doc_id=rhs_doc["doc_id"])
+                legal_events = legal_structural_diff(
+                    pair, lhs_doc, rhs_doc, lhs_chunks, rhs_chunks
+                )
+                events.extend(legal_events)
+                summary["legal_events"] = len(legal_events)
+                summary["events_total"] = len(events)
+            except Exception as e:
+                logger.warning("legal_structural_diff failed for pair %s: %s", pair.get("pair_id"), e)
 
         pair_dir = base / "pairs" / pair["pair_id"]
         pair_dir.mkdir(parents=True, exist_ok=True)
