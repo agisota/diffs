@@ -96,6 +96,13 @@ def render_evidence_matrix(out_path: Path, state: dict[str, Any], all_events: li
         "deleted": sum(1 for e in all_events if e.get("status") == "deleted"),
         "partial": sum(1 for e in all_events if e.get("status") == "partial"),
         "modified": sum(1 for e in all_events if e.get("status") == "modified"),
+        # PR-2.1: surface cache effectiveness in the evidence matrix.
+        "cache_extract_hits": sum(
+            1 for d in state.get("documents", []) if d.get("cache_extract_hit")
+        ),
+        "cache_compare_hits": sum(
+            1 for p in (pair_summaries or []) if p.get("cache_hit")
+        ),
     }
     for k, v in metrics.items():
         ws.append([k, v])
@@ -147,6 +154,60 @@ def render_evidence_matrix(out_path: Path, state: dict[str, Any], all_events: li
                 cell.fill = fill
         style_header(ws)
         autofit(ws)
+
+    # PR-2.1: status × severity pivot.
+    ws = wb.create_sheet("08_status_severity")
+    statuses = ["same", "partial", "modified", "added", "deleted", "contradicts", "manual_review"]
+    severities = ["high", "medium", "low"]
+    ws.append(["status \\ severity", *severities, "total"])
+    for st in statuses:
+        row = [st]
+        total = 0
+        for sv in severities:
+            n = sum(
+                1 for e in all_events
+                if (e.get("status") or "") == st and (e.get("severity") or "low") == sv
+            )
+            row.append(n)
+            total += n
+        row.append(total)
+        ws.append(row)
+    style_header(ws)
+    autofit(ws)
+
+    # PR-2.1: by-source-rank sheet — events grouped by lhs/rhs rank pair.
+    docs_by_id = {d.get("doc_id"): d for d in state.get("documents", [])}
+    rank_pairs: dict[tuple[int, int], int] = {}
+    for ev in all_events:
+        lr = int((docs_by_id.get(ev.get("lhs_doc_id"), {}) or {}).get("source_rank") or 3)
+        rr = int((docs_by_id.get(ev.get("rhs_doc_id"), {}) or {}).get("source_rank") or 3)
+        key = (min(lr, rr), max(lr, rr))
+        rank_pairs[key] = rank_pairs.get(key, 0) + 1
+    ws = wb.create_sheet("09_by_source_rank")
+    ws.append(["rank_lo", "rank_hi", "label", "events"])
+    label_map = {1: "official_NPA", 2: "departmental", 3: "analytics"}
+    for (lo, hi), n in sorted(rank_pairs.items()):
+        ws.append([lo, hi, f"{label_map[lo]} ↔ {label_map[hi]}", n])
+    style_header(ws)
+    autofit(ws)
+
+    # PR-2.1: cache_metrics sheet.
+    ws = wb.create_sheet("10_cache_metrics")
+    docs = state.get("documents", [])
+    pairs = pair_summaries or []
+    extract_hits = sum(1 for d in docs if d.get("cache_extract_hit"))
+    compare_hits = sum(1 for p in pairs if p.get("cache_hit"))
+    ws.append(["scope", "hits", "total", "ratio"])
+    ws.append([
+        "extract", extract_hits, len(docs),
+        round(extract_hits / len(docs), 3) if docs else 0,
+    ])
+    ws.append([
+        "compare", compare_hits, len(pairs),
+        round(compare_hits / len(pairs), 3) if pairs else 0,
+    ])
+    style_header(ws)
+    autofit(ws)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     wb.save(out_path)

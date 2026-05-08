@@ -236,9 +236,19 @@ def _merge_db_with_json(db_state: dict[str, Any], json_state: dict[str, Any]) ->
         j = docs_by_id.get(doc.get("doc_id"))
         if not j:
             continue
-        for k in ("raw_path", "canonical_pdf", "extracted_json", "block_count", "title"):
+        for k in (
+            "raw_path", "canonical_pdf", "extracted_json", "block_count",
+            "title", "cache_extract_hit",  # PR-2.1: preserve cache hit signal
+        ):
             if j.get(k) is not None:
                 doc[k] = j[k]
+
+    # Backfill per-pair cache_hit flag from JSON pair_summaries (DB doesn't track).
+    pairs_by_id = {p.get("pair_id"): p for p in json_state.get("pair_runs", [])}
+    for pr in merged.get("pair_runs", []):
+        j = pairs_by_id.get(pr.get("pair_id"))
+        if j and j.get("cache_hit") is not None:
+            pr["cache_hit"] = j["cache_hit"]
     return merged
 
 
