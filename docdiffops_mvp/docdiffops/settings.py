@@ -17,4 +17,12 @@ DATABASE_URL = os.getenv(
     else "postgresql+psycopg2://docdiff:docdiff@db:5432/docdiff",
 )
 
+# Versioning constants for cache-key construction (PR-1.6).
+# Bumping EXTRACTOR_VERSION invalidates every cached extract result; bumping
+# COMPARATOR_VERSION invalidates every cached compare result. They are also
+# persisted on document_versions and pair_runs rows so a re-run can detect
+# when stored data is from an older comparator/extractor.
+EXTRACTOR_VERSION = os.getenv("EXTRACTOR_VERSION", "2.A.0")
+COMPARATOR_VERSION = os.getenv("COMPARATOR_VERSION", "1.0.0")
+
 DATA_DIR.mkdir(parents=True, exist_ok=True)
