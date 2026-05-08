@@ -458,12 +458,12 @@ Day-by-day for week 1 of Sprint 1. Each task is atomic — pick one and finish i
 - Update `WORKLOG.md` with Sprint-1 progress, blockers, learnings
 - 30 min: re-read brief §12 cache invalidation table — that's the spec for week 2
 
-## 10. Open questions for the user
+## 10. Open questions — CLOSED 2026-05-08
 
-These were not addressed in the brief and block specific implementation choices. Defaults are noted; please confirm or override.
+All five questions answered by the product owner; locking these as constraints for the build.
 
-1. **Reviewer authentication.** The MVP has zero auth. For Sprint 4's reviewer UI, options are: (a) basic auth with hardcoded users, (b) OIDC via Keycloak, (c) trust-the-network (deploy behind VPN, no auth). Default: (c) for the first internal deployment, (a) for any external reviewer; OIDC postponed.
-2. **Anchor selection surface.** Brief says "user can change anchor"; the MVP has no UI. Options: (a) CLI flag on `docdiff render`, (b) form field in the reviewer UI, (c) API param only. Default: (c) API + (b) UI in Sprint 4.
-3. **Batch retention policy.** How long should `data/batches/{batch_id}/` live? Options: 30 days, 90 days, indefinite. Default: 90 days for raw + extracted, indefinite for `evidence_matrix.xlsx`, 30 days for cache.
-4. **Russian PII handling for scanned PDFs.** If OCR encounters passport numbers, INN, full names of officials in scanned NPA, must they be redacted before any LLM call (Sprint 5 semantic comparator)? Default: yes, run a regex-based PII scrubber over text before LLM calls; any LLM call on un-scrubbed text fails closed.
-5. **`internal_neuron_manual_v2.pdf` integration.** The brief mentions importing existing Neuron Excel outputs as "external comparator signals." Do we wire that into Sprint 5 (PR-5.x) as a real importer, or leave as out-of-scope for v1.0? Default: out-of-scope for v1.0, ticket deferred to v1.1.
+1. **Reviewer authentication → NONE (public access).** Service is exposed without authentication. All endpoints anonymous. Sprint 4 reviewer UI is a single page with no login. Drop OIDC/basic-auth from Sprint 4 scope; PR-4.6 audit log captures `reviewer_name` from a free-text form field rather than a session.
+2. **Anchor selection surface → API param + UI form (default kept).** `POST /batches/{batch_id}/render?anchor_doc_id=...` is the canonical entry point; Sprint 4 reviewer UI exposes a dropdown bound to it. CLI flag deferred.
+3. **Batch retention → 30 days, uniform.** Single retention SLA across `raw/`, `normalized/`, `extracted/`, `pairs/`, `reports/`, and `cache/`. PR-5.4 cache prune CLI extends to a full batch reaper with a single `RETENTION_DAYS=30` env var. No tier distinction. Operators wanting longer retention export `evidence_matrix.xlsx` to S3 lifecycle-managed storage out-of-band.
+4. **PII handling → none.** Source corpus is open-source NPAs and analytics; no PII redaction layer required. Drop the regex PII scrubber from PR-5.5 semantic comparator. Add a one-line constraint in `README.md`: "Service is not certified for processing personal data; do not upload documents containing PII."
+5. **Neuron Excel import → out-of-scope for v1.0 (default kept).** `internal_neuron_manual_v2.pdf` and `sample_neuron_comparison_brief.xlsx` stay in `input/` as reference material only. Track a v1.1 ticket: "import Neuron evidence rows as external `comparison_type=neuron_legacy` events with `confidence` propagated from Neuron's `match_score`."
