@@ -29,6 +29,10 @@ services:
       LLM_API_KEY: "${LLM_API_KEY:-}"
       LLM_MODEL: "${LLM_MODEL:-gpt-4o-mini}"
       SEMANTIC_MAX_CLAIMS_PER_PAIR: "${SEMANTIC_MAX_CLAIMS_PER_PAIR:-10}"
+      LLM_PAIR_DIFF_ENABLED: "${LLM_PAIR_DIFF_ENABLED:-false}"
+      LLM_PAIR_DIFF_MODEL: "${LLM_PAIR_DIFF_MODEL:-}"
+      LLM_PAIR_DIFF_CHAR_BUDGET: "${LLM_PAIR_DIFF_CHAR_BUDGET:-12000}"
+      KEEP_FUZZY_WITH_LLM_PAIR_DIFF: "${KEEP_FUZZY_WITH_LLM_PAIR_DIFF:-false}"
     volumes:
       - ./data:/data
     depends_on:
@@ -49,6 +53,10 @@ services:
       LLM_API_KEY: "${LLM_API_KEY:-}"
       LLM_MODEL: "${LLM_MODEL:-gpt-4o-mini}"
       SEMANTIC_MAX_CLAIMS_PER_PAIR: "${SEMANTIC_MAX_CLAIMS_PER_PAIR:-10}"
+      LLM_PAIR_DIFF_ENABLED: "${LLM_PAIR_DIFF_ENABLED:-false}"
+      LLM_PAIR_DIFF_MODEL: "${LLM_PAIR_DIFF_MODEL:-}"
+      LLM_PAIR_DIFF_CHAR_BUDGET: "${LLM_PAIR_DIFF_CHAR_BUDGET:-12000}"
+      KEEP_FUZZY_WITH_LLM_PAIR_DIFF: "${KEEP_FUZZY_WITH_LLM_PAIR_DIFF:-false}"
     volumes:
       - ./data:/data
     depends_on:
