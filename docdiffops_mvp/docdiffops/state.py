@@ -221,14 +221,16 @@ def _merge_db_with_json(db_state: dict[str, Any], json_state: dict[str, Any]) ->
     for k in ("config", "runs", "metrics"):
         if k in json_state:
             merged[k] = json_state[k]
-    # If the DB row exists but documents/pair_runs haven't been dual-written
-    # yet (upload-then-run gap before pipeline.normalize_and_extract calls
-    # repo.add_document), prefer the JSON list. Same defense for pair_runs
-    # and diff_events. Otherwise an empty DB silently obliterates the
-    # uploaded docs on the next save_state.
+    # If JSON has MORE entries than the DB (dual-write partial failure
+    # OR upload→run gap), prefer the JSON list. Otherwise an
+    # incomplete DB silently obliterates uploaded docs on the next
+    # save_state. Counting beats existence-checking because partial
+    # failures are real on this surface.
     for k in ("documents", "pair_runs", "diff_events", "pairs"):
-        if not merged.get(k) and json_state.get(k):
-            merged[k] = json_state[k]
+        json_list = json_state.get(k) or []
+        merged_list = merged.get(k) or []
+        if len(json_list) > len(merged_list):
+            merged[k] = json_list
 
     # Backfill per-document paths from the JSON.
     docs_by_id = {d.get("doc_id"): d for d in json_state.get("documents", [])}
