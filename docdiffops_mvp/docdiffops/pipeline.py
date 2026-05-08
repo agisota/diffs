@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +13,8 @@ from .legal import (
     chunk_text as legal_chunk_text,
     claim_validation_events,
     legal_structural_diff,
+    llm_pair_diff,
+    llm_pair_diff_enabled,
 )
 from .executive import render_executive_md
 from .extract import extract_any
@@ -34,6 +38,28 @@ from .settings import COMPARATOR_VERSION, EXTRACTOR_VERSION  # PR-1.6: single so
 # helpers. state.py also lazily builds its own repo when none is passed
 # (used by the upload path in main.py); pipeline always passes its
 # instance so a single run_batch call shares the same repo object.
+
+
+def _refresh_status_counts(summary: dict[str, Any], events: list[dict[str, Any]]) -> None:
+    """Re-derive per-status counts in ``summary`` from ``events``.
+
+    The fuzzy comparator pre-populated counts in compare.compare_pair;
+    when llm_pair_diff replaces those events the counts go stale, so
+    we recompute the canonical fields the renderers expect.
+    """
+    sev = Counter((e.get("severity") or "low").lower() for e in events)
+    stat = Counter((e.get("status") or "").lower() for e in events)
+    summary["events_total"] = len(events)
+    summary["high_count"] = sev.get("high", 0)
+    summary["medium_count"] = sev.get("medium", 0)
+    summary["low_count"] = sev.get("low", 0)
+    summary["same_count"] = stat.get("same", 0)
+    summary["partial_count"] = stat.get("partial", 0)
+    summary["modified_count"] = stat.get("modified", 0)
+    summary["added_count"] = stat.get("added", 0)
+    summary["deleted_count"] = stat.get("deleted", 0)
+    summary["contradicts_count"] = stat.get("contradicts", 0)
+    summary["review_required_count"] = sum(1 for e in events if e.get("review_required"))
 
 
 def _doc_by_id(state: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -204,6 +230,31 @@ def run_all_pairs(
         events = bundle["events"]
         summary = bundle["summary"]
         summary["cache_hit"] = hit
+
+        # PR-5.7: when the LLM pair-diff is active, replace the fuzzy
+        # block_semantic_diff event noise with a curated semantic list.
+        # The fuzzy events are still generated (and cached) above so we
+        # can A/B; the pipeline then drops them from the output if the
+        # LLM produced a usable result. Set
+        # KEEP_FUZZY_WITH_LLM_PAIR_DIFF=true to retain both layers.
+        if llm_pair_diff_enabled():
+            try:
+                llm_events = llm_pair_diff(pair, lhs_doc, rhs_doc, lhs_blocks, rhs_blocks)
+            except Exception as e:
+                logger.warning("llm_pair_diff failed for %s: %s", pair.get("pair_id"), e)
+                llm_events = []
+            if llm_events:
+                keep_fuzzy = os.getenv("KEEP_FUZZY_WITH_LLM_PAIR_DIFF", "false").lower() == "true"
+                if not keep_fuzzy:
+                    # Drop the fuzzy events; keep llm-curated set.
+                    events = list(llm_events)
+                else:
+                    events.extend(llm_events)
+                summary["llm_pair_diff_events"] = len(llm_events)
+                summary["events_total"] = len(events)
+                # Recompute the per-status counts for the summary so the
+                # XLSX/HTML rendering reflects what's actually emitted.
+                _refresh_status_counts(summary, events)
 
         # PR-3.3 / PR-3.6: when both sides have a structurable doc_type,
         # ALSO emit legal_structural_diff events on top of the fuzzy ones.

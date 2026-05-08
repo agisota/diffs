@@ -10,6 +10,8 @@ Public surface:
 
 from .chunker import Chunk, chunk_text
 from .claims import Claim, claim_validation_events, extract_claims, validate_claim
+from .llm_pair_diff import is_enabled as llm_pair_diff_enabled
+from .llm_pair_diff import llm_pair_diff
 from .rank_gate import apply_rank_gate
 from .refs import LegalRef, parse_refs
 from .structural_diff import legal_structural_diff
@@ -25,4 +27,6 @@ __all__ = [
     "parse_refs",
     "legal_structural_diff",
     "apply_rank_gate",
+    "llm_pair_diff",
+    "llm_pair_diff_enabled",
 ]
