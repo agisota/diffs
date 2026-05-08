@@ -76,6 +76,9 @@ class Document(Base):
     extension: Mapped[str | None] = mapped_column(String(16), nullable=True)
     source_rank: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
     doc_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # PR-1.5: provenance URL captured at upload time. Nullable for
+    # locally-uploaded files where we cannot prove provenance.
+    source_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="uploaded")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -242,6 +245,44 @@ class Artifact(Base):
     __table_args__ = (Index("ix_artifacts_batch_id", "batch_id"),)
 
 
+class SourceRegistry(Base):
+    """Registry of distinct provenance URLs encountered during uploads.
+
+    PR-1.5 introduces this table so PR-4.4 (scheduled URL polling) has a
+    place to record ``last_polled_at`` / ``last_seen_sha256`` without
+    bolting more columns onto ``documents``. Multiple ``Document`` rows
+    can share the same registry entry — a federal law uploaded into two
+    batches is the same source, polled once.
+
+    Idempotency key: ``url`` is unique. ``register_source`` returns the
+    existing row when called twice.
+    """
+
+    __tablename__ = "source_registry"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    url: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    inferred_rank: Mapped[int] = mapped_column(Integer, nullable=False)
+    inferred_doc_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    last_polled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_seen_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        Index("ix_source_registry_inferred_rank", "inferred_rank"),
+    )
+
+
 __all__ = [
     "Base",
     "Batch",
@@ -251,4 +292,5 @@ __all__ = [
     "DiffEvent",
     "ReviewDecision",
     "Artifact",
+    "SourceRegistry",
 ]

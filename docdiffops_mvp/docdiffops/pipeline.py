@@ -112,6 +112,7 @@ def normalize_and_extract(
                 extension=doc.get("ext"),
                 source_rank=int(doc.get("source_rank") or 3),
                 doc_type=doc.get("doc_type"),
+                source_url=doc.get("source_url"),
             )
             _safe(
                 "add_document_version",
