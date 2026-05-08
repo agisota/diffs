@@ -136,7 +136,7 @@ def infer_source_rank(source_url: str | None) -> int:
     if host in HOST_RANK:
         return HOST_RANK[host]
     for suffix, rank in SUFFIX_RANK:
-        if host.endswith(suffix):
+        if host.endswith(suffix) or "." + host == suffix:
             return rank
     return 3
 
@@ -200,6 +200,8 @@ def _extract_host(source_url: str | None) -> str | None:
     if not host:
         return None
     host = host.lower().rstrip(".")
+    if host.startswith("www."):
+        host = host[4:]
     return host or None
 
 
