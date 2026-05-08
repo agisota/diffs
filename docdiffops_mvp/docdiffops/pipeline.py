@@ -7,7 +7,11 @@ from typing import Any
 
 from . import cache
 from .compare import build_pairs, compare_pair
-from .legal import chunk_text as legal_chunk_text, legal_structural_diff
+from .legal import (
+    chunk_text as legal_chunk_text,
+    claim_validation_events,
+    legal_structural_diff,
+)
 from .executive import render_executive_md
 from .extract import extract_any
 from .normalize import convert_to_canonical_pdf
@@ -221,6 +225,37 @@ def run_all_pairs(
                 summary["events_total"] = len(events)
             except Exception as e:
                 logger.warning("legal_structural_diff failed for pair %s: %s", pair.get("pair_id"), e)
+
+        # PR-3.5: claim validation for analytics ↔ NPA pairs.
+        # When one side is rank-3 (analytics/presentation/blog) and the
+        # other is rank-1 (official NPA/Concept), extract assertive
+        # claims from the analytics side and validate against the NPA's
+        # structural chunks. Brief §13: rank-3 cannot refute rank-1 —
+        # the rank_gate inside the comparator enforces this.
+        lhs_rank = int(lhs_doc.get("source_rank") or 3)
+        rhs_rank = int(rhs_doc.get("source_rank") or 3)
+        analytics, npa, analytics_blocks = None, None, None
+        if lhs_rank == 3 and rhs_rank == 1:
+            analytics, npa, analytics_blocks = lhs_doc, rhs_doc, lhs_blocks
+        elif rhs_rank == 3 and lhs_rank == 1:
+            analytics, npa, analytics_blocks = rhs_doc, lhs_doc, rhs_blocks
+        if analytics is not None and npa is not None:
+            try:
+                npa_text = "\n".join(
+                    b.get("text", "")
+                    for b in (rhs_blocks if npa is rhs_doc else lhs_blocks)
+                )
+                npa_chunks = legal_chunk_text(
+                    npa.get("doc_type"), npa_text, doc_id=npa["doc_id"]
+                )
+                cv_events = claim_validation_events(
+                    pair, analytics, npa, analytics_blocks, npa_chunks
+                )
+                events.extend(cv_events)
+                summary["claim_validation_events"] = len(cv_events)
+                summary["events_total"] = len(events)
+            except Exception as e:
+                logger.warning("claim_validation failed for pair %s: %s", pair.get("pair_id"), e)
 
         pair_dir = base / "pairs" / pair["pair_id"]
         pair_dir.mkdir(parents=True, exist_ok=True)

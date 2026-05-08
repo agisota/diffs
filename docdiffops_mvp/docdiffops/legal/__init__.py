@@ -9,6 +9,7 @@ Public surface:
 """
 
 from .chunker import Chunk, chunk_text
+from .claims import Claim, claim_validation_events, extract_claims, validate_claim
 from .rank_gate import apply_rank_gate
 from .refs import LegalRef, parse_refs
 from .structural_diff import legal_structural_diff
@@ -16,6 +17,10 @@ from .structural_diff import legal_structural_diff
 __all__ = [
     "Chunk",
     "chunk_text",
+    "Claim",
+    "claim_validation_events",
+    "extract_claims",
+    "validate_claim",
     "LegalRef",
     "parse_refs",
     "legal_structural_diff",
