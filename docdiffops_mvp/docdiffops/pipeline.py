@@ -278,6 +278,24 @@ def render_global_reports(
     render_executive_md(md_path, state, all_events, pair_summaries)
     add_artifact(state, "executive_md", md_path, "Executive diff", repo=repo)
 
+    # PR-2.2: Executive DOCX (Word-formatted twin of the MD).
+    try:
+        from .render_executive_docx import render_executive_docx
+        docx_path = base / "reports" / "executive_diff.docx"
+        render_executive_docx(docx_path, state, all_events, pair_summaries)
+        add_artifact(state, "executive_docx", docx_path, "Executive diff (DOCX)", repo=repo)
+    except Exception as e:
+        logger.warning("render_executive_docx failed: %s", e)
+
+    # PR-2.5: standalone HTML report.
+    try:
+        from .render_html_report import render_html_report
+        html_path = base / "reports" / "full_diff_report.html"
+        render_html_report(html_path, state, all_events, pair_summaries)
+        add_artifact(state, "full_html", html_path, "Full HTML report", repo=repo)
+    except Exception as e:
+        logger.warning("render_html_report failed: %s", e)
+
     # Machine-readable global exports.
     write_jsonl(base / "reports" / "diff_events_all.jsonl", all_events)
     write_json(base / "reports" / "pair_summaries.json", pair_summaries)
