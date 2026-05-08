@@ -272,3 +272,135 @@ def test_add_artifact_distinct_for_different_path(repo) -> None:
     a = repo.add_artifact(bid, "redgreen_pdf", "pairs/p1/rg.pdf")
     b = repo.add_artifact(bid, "redgreen_pdf", "pairs/p2/rg.pdf")
     assert a.id != b.id
+
+
+# ---------------------------------------------------------------------------
+# to_state_dict + list_all_batches (PR-1.3 read path)
+# ---------------------------------------------------------------------------
+
+
+def _seed_batch_with_pair(repo, bid: str, did_a: str, did_b: str,
+                          pid: str, eid: str) -> None:
+    """Seed one batch with two documents, one pair_run and one diff_event."""
+    repo.create_batch(bid, title="title-" + bid)
+    repo.add_document(bid, did_a, "a.pdf", "a" * 64, ".pdf", 2, "LEGAL_NPA")
+    repo.add_document(bid, did_b, "b.pdf", "b" * 64, ".pdf", 3, "OTHER")
+    dv_a = repo.add_document_version(did_a, 1, "a" * 64, "n_a.pdf", "e_a.json", "2.A.0")
+    dv_b = repo.add_document_version(did_b, 1, "b" * 64, "n_b.pdf", "e_b.json", "2.A.0")
+    repo.add_pair_run(bid, pid, dv_a.id, dv_b.id, "1.0.0")
+    repo.update_pair_run_status(pid, "finished")
+    repo.add_diff_event(
+        eid, pid, "block_semantic_diff", "partial", "medium", 0.81,
+        lhs_doc_id=did_a, lhs_page=1, lhs_quote="lhs",
+        rhs_doc_id=did_b, rhs_page=1, rhs_quote="rhs",
+        explanation_short="paraphrase", review_required=True,
+    )
+    repo.add_artifact(bid, "evidence_xlsx", "reports/evidence_matrix.xlsx")
+
+
+def test_to_state_dict_returns_none_for_unknown_batch(repo) -> None:
+    assert repo.to_state_dict("bat_does_not_exist") is None
+
+
+def test_to_state_dict_shape_matches_load_state(repo) -> None:
+    """Verify the dict returned by ``to_state_dict`` carries every
+    top-level field that ``state.load_state`` produces today.
+    """
+    bid = _new_id("bat")
+    did_a, did_b = _new_id("doc"), _new_id("doc")
+    pid, eid = _new_id("pair"), _new_id("evt")
+    _seed_batch_with_pair(repo, bid, did_a, did_b, pid, eid)
+
+    state = repo.to_state_dict(bid)
+    assert state is not None
+
+    # Top-level shape: every field state.create_batch produces in JSON.
+    for key in ("batch_id", "title", "created_at", "updated_at", "config",
+                "documents", "pairs", "runs", "artifacts", "metrics",
+                "pair_runs", "diff_events", "status"):
+        assert key in state, f"missing top-level key {key!r}"
+
+    assert state["batch_id"] == bid
+    assert state["title"] == "title-" + bid
+    assert state["status"] == "created"
+
+    # Documents project the right shape with required fields.
+    assert len(state["documents"]) == 2
+    doc_ids = {d["doc_id"] for d in state["documents"]}
+    assert doc_ids == {did_a, did_b}
+    a_row = next(d for d in state["documents"] if d["doc_id"] == did_a)
+    for k in ("doc_id", "filename", "sha256", "ext", "source_rank",
+              "doc_type", "status", "title", "raw_path", "canonical_pdf",
+              "extracted_json", "block_count"):
+        assert k in a_row
+    assert a_row["sha256"] == "a" * 64
+    assert a_row["source_rank"] == 2
+    assert a_row["doc_type"] == "LEGAL_NPA"
+
+    # Pairs (legacy shape) and pair_runs (richer shape).
+    assert len(state["pairs"]) == 1
+    p = state["pairs"][0]
+    assert {"pair_id", "lhs_doc_id", "rhs_doc_id"} <= set(p)
+    assert p["pair_id"] == pid
+    assert {p["lhs_doc_id"], p["rhs_doc_id"]} == {did_a, did_b}
+
+    assert len(state["pair_runs"]) == 1
+    pr = state["pair_runs"][0]
+    assert pr["pair_id"] == pid
+    assert pr["status"] == "finished"
+    assert pr["comparator_version"] == "1.0.0"
+
+    # Diff events: inline list with brief schema.
+    assert len(state["diff_events"]) == 1
+    ev = state["diff_events"][0]
+    for k in ("event_id", "pair_id", "comparison_type", "status",
+              "severity", "confidence", "lhs", "rhs",
+              "explanation_short", "review_required"):
+        assert k in ev
+    assert ev["event_id"] == eid
+    assert ev["status"] == "partial"
+    assert ev["severity"] == "medium"
+    assert ev["confidence"] == 0.81
+    assert ev["review_required"] is True
+    assert ev["lhs"]["doc_id"] == did_a
+    assert ev["rhs"]["doc_id"] == did_b
+
+    # Artifacts: brief shape (type/title/path).
+    assert len(state["artifacts"]) == 1
+    art = state["artifacts"][0]
+    for k in ("type", "title", "path"):
+        assert k in art
+    assert art["type"] == "evidence_xlsx"
+    assert art["path"] == "reports/evidence_matrix.xlsx"
+
+    # JSON-only fields default to empty containers.
+    assert state["config"] == {}
+    assert state["runs"] == []
+    assert state["metrics"] == {}
+
+
+def test_list_all_batches_returns_summary_per_batch(repo) -> None:
+    bid_a, bid_b = _new_id("bat"), _new_id("bat")
+    _seed_batch_with_pair(
+        repo, bid_a, _new_id("doc"), _new_id("doc"),
+        _new_id("pair"), _new_id("evt"),
+    )
+    repo.create_batch(bid_b, title="empty")
+
+    rows = repo.list_all_batches()
+    by_id = {r["batch_id"]: r for r in rows}
+    assert bid_a in by_id and bid_b in by_id
+
+    a = by_id[bid_a]
+    for k in ("batch_id", "title", "status", "created_at", "updated_at",
+              "documents_count", "pair_runs_count", "diff_events_count"):
+        assert k in a
+    assert a["documents_count"] == 2
+    assert a["pair_runs_count"] == 1
+    assert a["diff_events_count"] == 1
+
+    b = by_id[bid_b]
+    assert b["documents_count"] == 0
+    assert b["pair_runs_count"] == 0
+    assert b["diff_events_count"] == 0
+    assert b["title"] == "empty"
