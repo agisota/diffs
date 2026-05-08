@@ -35,11 +35,13 @@ from sqlalchemy.exc import IntegrityError
 from . import get_session
 from .models import (
     Artifact,
+    AuditLog,
     Batch,
     DiffEvent,
     Document,
     DocumentVersion,
     PairRun,
+    ReviewDecision,
     SourceRegistry,
 )
 
@@ -567,6 +569,92 @@ class BatchRepository:
             session.refresh(art)
             return art
 
+    # ==================================================================
+    # PR-4.1: review decisions
+    # ==================================================================
+
+    def add_review_decision(
+        self,
+        *,
+        decision_id: str,
+        event_id: str,
+        reviewer_name: str,
+        decision: str,
+        comment: str | None = None,
+    ) -> dict:
+        """Persist a reviewer decision against a diff_event. Idempotent on
+        ``decision_id`` so retries from the UI don't double-insert."""
+        with get_session() as session:
+            existing = session.get(ReviewDecision, decision_id)
+            if existing is not None:
+                return _review_to_dict(existing)
+            rd = ReviewDecision(
+                id=decision_id,
+                event_id=event_id,
+                reviewer_name=reviewer_name,
+                decision=decision,
+                comment=comment,
+            )
+            session.add(rd)
+            session.commit()
+            session.refresh(rd)
+            return _review_to_dict(rd)
+
+    def list_event_reviews(self, event_id: str) -> list[dict]:
+        with get_session() as session:
+            rows = session.scalars(
+                select(ReviewDecision)
+                .where(ReviewDecision.event_id == event_id)
+                .order_by(ReviewDecision.decided_at)
+            ).all()
+            return [_review_to_dict(r) for r in rows]
+
+    # ==================================================================
+    # PR-4.6: audit log
+    # ==================================================================
+
+    def add_audit_entry(
+        self,
+        *,
+        entry_id: str,
+        action: str,
+        batch_id: str | None = None,
+        actor: str | None = None,
+        target_kind: str | None = None,
+        target_id: str | None = None,
+        payload: dict | None = None,
+    ) -> dict:
+        """Append a row to audit_log. Idempotent on ``entry_id``."""
+        with get_session() as session:
+            existing = session.get(AuditLog, entry_id)
+            if existing is not None:
+                return _audit_to_dict(existing)
+            row = AuditLog(
+                id=entry_id,
+                batch_id=batch_id,
+                actor=actor,
+                action=action,
+                target_kind=target_kind,
+                target_id=target_id,
+                payload=payload,
+            )
+            session.add(row)
+            session.commit()
+            session.refresh(row)
+            return _audit_to_dict(row)
+
+    def list_audit_for_batch(
+        self, batch_id: str, *, limit: int = 200
+    ) -> list[dict]:
+        with get_session() as session:
+            rows = session.scalars(
+                select(AuditLog)
+                .where(AuditLog.batch_id == batch_id)
+                .order_by(AuditLog.created_at.desc())
+                .limit(limit)
+            ).all()
+            return [_audit_to_dict(r) for r in rows]
+
 
 # ---------------------------------------------------------------------------
 # Stable id helpers (kept private to the module).
@@ -676,6 +764,30 @@ def _artifact_to_dict(a: Artifact) -> dict:
         "path": a.path,
         "sha256": a.sha256,
         "size_bytes": a.size_bytes,
+    }
+
+
+def _review_to_dict(r: ReviewDecision) -> dict:
+    return {
+        "id": r.id,
+        "event_id": r.event_id,
+        "reviewer_name": r.reviewer_name,
+        "decision": r.decision,
+        "comment": r.comment,
+        "decided_at": _fmt_dt(r.decided_at),
+    }
+
+
+def _audit_to_dict(a: AuditLog) -> dict:
+    return {
+        "id": a.id,
+        "batch_id": a.batch_id,
+        "actor": a.actor,
+        "action": a.action,
+        "target_kind": a.target_kind,
+        "target_id": a.target_id,
+        "payload": a.payload,
+        "created_at": _fmt_dt(a.created_at),
     }
 
 

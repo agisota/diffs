@@ -8,6 +8,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 
 from .app_html import APP_HTML
+from pydantic import BaseModel, Field
 from .schemas import CreateBatchRequest
 from .settings import DATA_DIR
 from .source_registry import classify
@@ -198,3 +199,149 @@ def download_artifact(batch_id: str, path: str):
     if not str(p).startswith(str(base)) or not p.exists() or not p.is_file():
         raise HTTPException(status_code=404, detail="file not found")
     return FileResponse(p)
+
+
+# ---------------------------------------------------------------------------
+# PR-4.1: review decisions
+# ---------------------------------------------------------------------------
+
+
+class ReviewRequest(BaseModel):
+    decision: str = Field(..., description="confirmed|rejected|needs_more_info|deferred")
+    reviewer_name: str = Field("anonymous", description="Free-text name; service is anonymous")
+    comment: str | None = None
+
+
+@app.post("/events/{event_id}/review")
+def review_event(event_id: str, req: ReviewRequest):
+    """Record a reviewer decision against a diff_event.
+
+    The service is anonymous (Q1 closure); reviewer_name is whatever
+    the form sends. Decisions are append-only — earlier decisions are
+    preserved. Returns the new decision row plus the updated review
+    history for the event.
+    """
+    from .state import _get_repo  # local import to avoid cycle
+    repo = _get_repo()
+    if repo is None:
+        raise HTTPException(status_code=503, detail="DB unavailable")
+    decision_id = "rd_" + stable_id(
+        event_id, req.reviewer_name, req.decision, str(now_ts_int()), n=20
+    )
+    try:
+        row = repo.add_review_decision(
+            decision_id=decision_id,
+            event_id=event_id,
+            reviewer_name=req.reviewer_name,
+            decision=req.decision,
+            comment=req.comment,
+        )
+    except Exception as e:
+        logger.warning("review write failed: %s", e)
+        raise HTTPException(status_code=400, detail=f"review failed: {e}")
+    # Audit (best-effort).
+    try:
+        repo.add_audit_entry(
+            entry_id="ae_" + stable_id(decision_id, "review", n=20),
+            action="event.review",
+            actor=req.reviewer_name,
+            target_kind="diff_event",
+            target_id=event_id,
+            payload={"decision": req.decision, "comment": req.comment},
+        )
+    except Exception as e:
+        logger.warning("audit write failed: %s", e)
+    history = repo.list_event_reviews(event_id)
+    return {"decision": row, "history": history}
+
+
+@app.get("/events/{event_id}/reviews")
+def list_event_reviews(event_id: str):
+    from .state import _get_repo
+    repo = _get_repo()
+    if repo is None:
+        raise HTTPException(status_code=503, detail="DB unavailable")
+    return {"event_id": event_id, "history": repo.list_event_reviews(event_id)}
+
+
+# ---------------------------------------------------------------------------
+# PR-4.2: anchor rerender
+# ---------------------------------------------------------------------------
+
+
+@app.post("/batches/{batch_id}/render")
+def rerender_reports(batch_id: str, anchor_doc_id: str | None = Query(None)):
+    """Re-run report generation without re-extracting or re-comparing.
+
+    The compare results are cached per (lhs_sha, rhs_sha) by PR-1.6, so
+    this endpoint is cheap. ``anchor_doc_id`` shapes the report layout
+    so the chosen doc is the LHS in every pair. The compare graph
+    itself is symmetric (PR-1.5 ADR-4) so no data needs to be recomputed.
+    """
+    from .pipeline import (
+        render_global_reports,
+        run_all_pairs,  # to rebuild events list from cache
+    )
+    try:
+        state = load_state(batch_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="batch not found")
+
+    # Optional reorientation: surface the chosen anchor as LHS in every
+    # pair-card and update state["anchor_doc_id"] so downstream renderers
+    # can use it. We don't physically swap pair_runs because the diff is
+    # already symmetric.
+    if anchor_doc_id:
+        if not any(d.get("doc_id") == anchor_doc_id for d in state.get("documents", [])):
+            raise HTTPException(status_code=400, detail="anchor_doc_id not in this batch")
+        state["anchor_doc_id"] = anchor_doc_id
+        save_state(batch_id, state)
+
+    # Recompute events list by re-running run_all_pairs (it's cache-hit
+    # for content unchanged) — this gives us the inputs to render.
+    events, summaries = run_all_pairs(batch_id, state)
+    render_global_reports(batch_id, state, events, summaries)
+    save_state(batch_id, state)
+
+    # Audit
+    from .state import _get_repo
+    repo = _get_repo()
+    if repo is not None:
+        try:
+            repo.add_audit_entry(
+                entry_id="ae_" + stable_id(batch_id, "rerender", anchor_doc_id or "", str(now_ts_int()), n=20),
+                action="batch.rerender",
+                batch_id=batch_id,
+                target_kind="batch",
+                target_id=batch_id,
+                payload={"anchor_doc_id": anchor_doc_id},
+            )
+        except Exception as e:
+            logger.warning("audit write failed: %s", e)
+
+    return {
+        "batch_id": batch_id,
+        "anchor_doc_id": anchor_doc_id,
+        "events": len(events),
+        "pairs": len(summaries),
+    }
+
+
+# ---------------------------------------------------------------------------
+# PR-4.6: audit log read
+# ---------------------------------------------------------------------------
+
+
+@app.get("/batches/{batch_id}/audit")
+def get_batch_audit(batch_id: str, limit: int = Query(200, ge=1, le=2000)):
+    from .state import _get_repo
+    repo = _get_repo()
+    if repo is None:
+        return {"batch_id": batch_id, "entries": []}
+    return {"batch_id": batch_id, "entries": repo.list_audit_for_batch(batch_id, limit=limit)}
+
+
+def now_ts_int() -> int:
+    """Monotonic-ish unix-ms helper for unique decision ids."""
+    import time
+    return int(time.time() * 1000)
