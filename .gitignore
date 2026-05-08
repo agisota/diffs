@@ -21,6 +21,11 @@ batches/
 .cache/
 *.log
 
+# Secrets / env
+.env
+.env.local
+*.env
+
 # OS / editor
 .DS_Store
 .idea/
