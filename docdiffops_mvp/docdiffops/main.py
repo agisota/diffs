@@ -110,6 +110,26 @@ async def upload_documents(
         existing_sha.add(digest)
         added.append(doc)
 
+        # Dual-write to Postgres at upload time so reads via READ_FROM_DB
+        # see the doc immediately, not only after pipeline.run_batch
+        # backfills via normalize_and_extract.
+        try:
+            from .state import _get_repo as _get_db_repo  # local import to avoid cycle
+            _r = _get_db_repo()
+            if _r is not None:
+                _r.add_document(
+                    batch_id=batch_id,
+                    doc_id=doc_id,
+                    filename=filename,
+                    sha256=digest,
+                    extension=Path(filename).suffix.lower(),
+                    source_rank=int(source_rank),
+                    doc_type=doc_type,
+                    source_url=clean_url,
+                )
+        except Exception as e:
+            logger.warning("DB dual-write of document failed (best-effort): %s", e)
+
         # PR-1.5: register the URL once so PR-4.4 polling has a target.
         if clean_url:
             try:
