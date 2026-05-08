@@ -281,6 +281,12 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
       <button class="tab-line" data-detail-tab="pairs">Пары</button>
       <button class="tab-line" data-detail-tab="docs">Документы</button>
       <button class="tab-line" data-detail-tab="artifacts">Артефакты</button>
+      <button class="tab-line" data-detail-tab="audit">Audit</button>
+      <span style="margin-left:auto;align-self:center;display:flex;gap:6px;align-items:center">
+        <span class="muted" style="font-size:12px">Anchor:</span>
+        <select id="anchor-select" class="batch-input" style="margin:0;width:auto;min-width:160px;font-size:12.5px;padding:4px 8px"></select>
+        <button class="btn" id="btn-rerender" style="padding:5px 10px;font-size:12px">↻ Rerender</button>
+      </span>
     </div>
 
     <div id="dtab-events" class="dtab">
@@ -307,6 +313,10 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
 
     <div id="dtab-artifacts" class="dtab" hidden>
       <div id="arts-list" class="arts-list"></div>
+    </div>
+
+    <div id="dtab-audit" class="dtab" hidden>
+      <div id="audit-list"></div>
     </div>
   </section>
 
@@ -505,6 +515,8 @@ async function openBatch(batchId) {
     renderPairs(s);
     renderDocs(s);
     renderArtifacts(s);
+    renderAnchorSelector(s);
+    loadAudit(batchId);
     location.hash = '#batch/' + batchId;
   } catch (e) {
     document.getElementById('detail-kpis').innerHTML = `<div class='empty'>Ошибка: ${escapeHtml(e.message)}</div>`;
@@ -608,6 +620,7 @@ function toggleEventRow(tr, e) {
   const dr = document.createElement('tr');
   dr.className = 'evt-detail-row';
   const lhs = e.lhs || {}, rhs = e.rhs || {};
+  const reviewerName = localStorage.getItem('docdiff:reviewer') || '';
   dr.innerHTML = `
     <td colspan='6' class='evt-detail'><div class='inner'>
       <div style='display:grid;grid-template-columns:120px 1fr;gap:6px 14px;font-size:13px'>
@@ -620,8 +633,68 @@ function toggleEventRow(tr, e) {
       ${lhs.quote ? `<div class='quote-box lhs'><div class='label'>LHS · p.${escapeHtml(lhs.page_no || '?')} · ${escapeHtml(e.lhs_doc_id || '')}</div>${escapeHtml(lhs.quote)}</div>` : ''}
       ${rhs.quote ? `<div class='quote-box rhs'><div class='label'>RHS · p.${escapeHtml(rhs.page_no || '?')} · ${escapeHtml(e.rhs_doc_id || '')}</div>${escapeHtml(rhs.quote)}</div>` : ''}
       ${e.explanation_short ? `<div class='muted' style='margin-top:8px;font-style:italic'>${escapeHtml(e.explanation_short)}</div>` : ''}
+      <div class='review-panel' data-evid='${escapeHtml(e.event_id)}' style='margin-top:14px;padding-top:12px;border-top:1px solid var(--line)'>
+        <div class='muted' style='font-size:11px;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px'>Review</div>
+        <div style='display:grid;grid-template-columns:1fr 1fr 2fr auto;gap:8px;align-items:end'>
+          <input class='review-name batch-input' placeholder='Your name' value='${escapeHtml(reviewerName)}' style='margin:0'>
+          <select class='review-decision batch-input' style='margin:0'>
+            <option value='confirmed'>confirmed</option>
+            <option value='rejected'>rejected</option>
+            <option value='needs_more_info'>needs more info</option>
+            <option value='deferred'>deferred</option>
+          </select>
+          <input class='review-comment batch-input' placeholder='Comment (optional)' style='margin:0'>
+          <button class='btn btn-primary review-submit' style='padding:8px 14px'>Save</button>
+        </div>
+        <div class='review-history' style='margin-top:10px'></div>
+      </div>
     </div></td>`;
   tr.parentNode.insertBefore(dr, tr.nextSibling);
+  // Wire review submission.
+  const panel = dr.querySelector('.review-panel');
+  const submitBtn = panel.querySelector('.review-submit');
+  const historyDiv = panel.querySelector('.review-history');
+  loadReviewHistory(e.event_id, historyDiv);
+  submitBtn.addEventListener('click', async () => {
+    const name = panel.querySelector('.review-name').value.trim() || 'anonymous';
+    const decision = panel.querySelector('.review-decision').value;
+    const comment = panel.querySelector('.review-comment').value;
+    localStorage.setItem('docdiff:reviewer', name);
+    submitBtn.disabled = true;
+    try {
+      const r = await fetch(BASE + '/events/' + e.event_id + '/review', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({reviewer_name: name, decision, comment})
+      }).then(r => r.json());
+      toast(`Review saved: ${decision}`, 'success');
+      panel.querySelector('.review-comment').value = '';
+      renderReviewHistory(historyDiv, r.history || []);
+    } catch (err) {
+      toast('Review failed: ' + err.message, 'error');
+    } finally {
+      submitBtn.disabled = false;
+    }
+  });
+}
+
+async function loadReviewHistory(eventId, container) {
+  try {
+    const r = await fetch(BASE + '/events/' + eventId + '/reviews').then(r => r.json());
+    renderReviewHistory(container, r.history || []);
+  } catch {}
+}
+
+function renderReviewHistory(container, history) {
+  if (!history.length) { container.innerHTML = "<div class='muted' style='font-size:12px;font-style:italic'>(no reviews yet)</div>"; return; }
+  container.innerHTML = history.map(h => `
+    <div style='padding:6px 0;border-bottom:1px dashed var(--line);font-size:12.5px'>
+      <span class='chip chip-${escapeHtml((h.decision||'').replace(/_/g,'-'))}'>${escapeHtml(h.decision||'')}</span>
+      <strong style='margin-left:6px'>${escapeHtml(h.reviewer_name||'?')}</strong>
+      <span class='muted' style='margin-left:6px'>${escapeHtml(h.decided_at||'')}</span>
+      ${h.comment ? `<div class='muted' style='margin-top:3px'>${escapeHtml(h.comment)}</div>` : ''}
+    </div>
+  `).join('');
 }
 
 ['evt-q', 'evt-sev', 'evt-stat', 'evt-pair'].forEach(id => {
@@ -704,6 +777,55 @@ function renderDocs(s) {
       ${d.source_url ? `<div style='margin-top:6px'><a href='${escapeHtml(d.source_url)}' target='_blank' style='font-size:11.5px'>↗ source</a></div>` : ''}
     `;
     grid.appendChild(card);
+  }
+}
+
+// -------- anchor selector + rerender --------
+function renderAnchorSelector(s) {
+  const sel = document.getElementById('anchor-select');
+  if (!sel) return;
+  const docs = s.documents || [];
+  const current = s.anchor_doc_id || '';
+  sel.innerHTML = '<option value="">(no anchor)</option>' + docs.map(d =>
+    `<option value="${escapeHtml(d.doc_id)}" ${d.doc_id === current ? 'selected' : ''}>${escapeHtml(d.filename || d.doc_id)}</option>`
+  ).join('');
+}
+document.getElementById('btn-rerender').addEventListener('click', async () => {
+  if (!currentBatchId) return;
+  const anchor = document.getElementById('anchor-select').value;
+  const btn = document.getElementById('btn-rerender');
+  btn.disabled = true; btn.textContent = '...rendering';
+  try {
+    const url = '/batches/' + currentBatchId + '/render' + (anchor ? '?anchor_doc_id=' + encodeURIComponent(anchor) : '');
+    const r = await fetch(BASE + url, { method: 'POST' }).then(r => r.json());
+    toast(`Rerendered: ${r.events ?? 0} events / ${r.pairs ?? 0} pairs`, 'success');
+    openBatch(currentBatchId);
+  } catch (e) {
+    toast('Rerender failed: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = '↻ Rerender';
+  }
+});
+
+// -------- audit log --------
+async function loadAudit(batchId) {
+  const list = document.getElementById('audit-list');
+  list.innerHTML = "<div class='empty'><span class='spinner'></span></div>";
+  try {
+    const r = await fetch(BASE + '/batches/' + batchId + '/audit').then(r => r.json());
+    const entries = r.entries || [];
+    if (!entries.length) { list.innerHTML = "<div class='empty'>(audit log empty)</div>"; return; }
+    list.innerHTML = '<table class="evt-table"><thead><tr><th style="width:140px">when</th><th style="width:120px">action</th><th style="width:140px">actor</th><th style="width:140px">target</th><th>payload</th></tr></thead><tbody>' +
+      entries.map(en => `
+        <tr>
+          <td class='muted mono' style='font-size:11.5px'>${escapeHtml(en.created_at || '')}</td>
+          <td><span class='chip chip-low'>${escapeHtml(en.action || '?')}</span></td>
+          <td>${escapeHtml(en.actor || '—')}</td>
+          <td class='muted mono' style='font-size:11.5px'>${escapeHtml((en.target_kind || '') + ' ' + (en.target_id || ''))}</td>
+          <td class='mono muted' style='font-size:11.5px'>${escapeHtml(JSON.stringify(en.payload || {}))}</td>
+        </tr>`).join('') + '</tbody></table>';
+  } catch (e) {
+    list.innerHTML = `<div class='empty'>Audit unavailable: ${escapeHtml(e.message)}</div>`;
   }
 }
 

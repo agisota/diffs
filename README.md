@@ -5,7 +5,69 @@ Outputs: red/green PDF, DOCX track-changes report, XLSX evidence matrix, executi
 
 ## Status
 
-Pre-implementation. This repo is the planning seed for `/ultraplan`.
+**LIVE at https://diff.zed.md** — Sprints 1, 2, and 3 shipped. Web UI on `/`,
+Swagger on `/docs`. Service is anonymous (no auth) and not certified for PII.
+
+| Sprint | Status | What landed |
+|---|---|---|
+| 1 | ✅ done | Postgres + Alembic, repository + dual-write, read cutover, source-registry, storage abstraction, content-addressed cache |
+| 2 | ✅ done | XLSX (10 sheets), Executive DOCX, full HTML report, PDF event_id labels, web UI SPA |
+| 3 | ✅ done | RU legal terms + refs parser, structural chunkers (NPA/Concept/GovPlan), legal_structural_diff, source-rank gate, claim_extractor + claim_validation |
+| 4 | ✅ done | review API, anchor rerender, audit log, reviewer UI controls in SPA |
+| 5 | partial | cache + batch prune CLI (PR-5.4), docs (PR-5.6); deferred: OTEL/Prometheus, semantic LLM comparator, scheduled URL polling |
+
+## Quick start
+
+```bash
+# Local development
+cd docdiffops_mvp
+docker compose up --build
+# → http://localhost:8000/ (web UI), /docs (Swagger), /health (JSON)
+
+# Production deploy
+ssh root@<host>
+git clone https://github.com/agisota/diffs.git /opt/diffs
+cd /opt/diffs/docdiffops_mvp
+docker compose up -d --build
+docker compose exec api alembic upgrade head
+```
+
+## Pipeline data flow
+
+```
+upload (POST /batches/{id}/documents, optional source_urls)
+  → classify(filename, url, content_head) → (doc_type, source_rank)
+  → dual-write Postgres + JSON state
+  → cache extract by sha256+EXTRACTOR_VERSION
+
+run (POST /batches/{id}/run?profile=fast&sync=true)
+  → for each pair (all-to-all, C(N,2)):
+      block_semantic_diff (rapidfuzz, every pair)
+    + legal_structural_diff (LEGAL_NPA / LEGAL_CONCEPT / GOV_PLAN both sides)
+    + claim_validation (rank-3 ↔ rank-1 pairs)
+    ⤷ apply_rank_gate inline (rank-3 cannot refute rank-1)
+  → render (xlsx, executive md+docx, html, pdf, jsonl)
+  → cache compare by lhs_sha+rhs_sha+COMPARATOR_VERSION
+
+review (POST /events/{id}/review)
+  → write ReviewDecision row
+  → write AuditLog entry
+
+prune (python -m docdiffops.cli_prune --days 30)
+  → drop cache/* and batches/* older than RETENTION_DAYS
+```
+
+## Env flags
+
+| Flag | Default | Effect |
+|---|---|---|
+| `DUAL_WRITE_ENABLED` | true | DB write enabled (PR-1.2) |
+| `READ_FROM_DB` | true | Reads via repository.to_state_dict; JSON fallback when DB has fewer rows |
+| `WRITE_JSON_STATE` | true | state.json + per-pair JSONL still written (belt-and-suspenders) |
+| `STORAGE_BACKEND` | fs | `fs` or `minio` (S3Storage scaffolded; MVP uses fs) |
+| `EXTRACTOR_VERSION` | 2.A.0 | Bump invalidates extract cache |
+| `COMPARATOR_VERSION` | 1.0.0 | Bump invalidates compare cache |
+| `RETENTION_DAYS` | 30 | cli_prune retention SLA |
 
 ## Layout
 
