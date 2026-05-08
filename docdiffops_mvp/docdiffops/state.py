@@ -129,10 +129,35 @@ def _load_json_only(batch_id: str) -> dict[str, Any]:
     Used by the integration parity test and as the JSON-fallback inside
     ``load_state``. Raises ``FileNotFoundError`` if the file is missing
     or empty so callers can detect a missing batch.
+
+    Backfills ``state["diff_events"]`` from ``pairs/*/diff_events.jsonl``
+    so callers always see the full event list even when state.json
+    itself only carries top-level metadata. This is the source-of-truth
+    path that survives DB dual-write failures.
     """
     state = read_json(state_path(batch_id))
     if not state:
         raise FileNotFoundError(f"Batch not found: {batch_id}")
+
+    if not state.get("diff_events"):
+        events: list[dict[str, Any]] = []
+        pairs_dir = batch_dir(batch_id) / "pairs"
+        if pairs_dir.exists():
+            for jsonl in sorted(pairs_dir.glob("*/diff_events.jsonl")):
+                try:
+                    for line in jsonl.read_text(encoding="utf-8").splitlines():
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            import json as _json
+                            events.append(_json.loads(line))
+                        except Exception:
+                            continue
+                except Exception as e:
+                    logger.warning("could not read %s: %s", jsonl, e)
+        if events:
+            state["diff_events"] = events
     return state
 
 
