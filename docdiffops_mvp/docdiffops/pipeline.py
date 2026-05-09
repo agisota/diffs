@@ -463,7 +463,257 @@ def render_global_reports(
     write_json(base / "reports" / "pair_summaries.json", pair_summaries)
     add_artifact(state, "jsonl", base / "reports" / "diff_events_all.jsonl", "All diff events JSONL", repo=repo)
     add_artifact(state, "json", base / "reports" / "pair_summaries.json", "Pair summaries JSON", repo=repo)
+
+    # Forensic v8 bundle (evidence-grade integral cross-comparison).
+    # Build the bundle once here so v10 can reuse it without a second call.
+    _shared_bundle: dict[str, Any] | None = None
+    try:
+        from .forensic import bundle_from_batch_state
+        from .forensic_actions import apply_actions_to_bundle
+        _shared_bundle = bundle_from_batch_state(state, all_events, pair_summaries)
+        _corpus = os.environ.get("FORENSIC_ACTIONS_CORPUS")
+        _shared_bundle = apply_actions_to_bundle(
+            _shared_bundle,
+            corpus=_corpus if _corpus == "migration_v8" else None,
+        )
+    except Exception as e:
+        logger.warning("forensic bundle pre-build failed: %s", e)
+
+    try:
+        _render_forensic_bundle(
+            batch_id, state, all_events, pair_summaries, repo=repo,
+            _bundle=_shared_bundle,
+        )
+    except Exception as e:
+        logger.warning("forensic v8 bundle failed: %s", e)
+
+    # v10 bundle (forensic v8 + correlations + 14-sheet XLSX + 10-chapter note + integral matrix)
+    if os.getenv("V10_BUNDLE_ENABLED", "false").lower() == "true":
+        try:
+            _render_v10_bundle(
+                batch_id, state, all_events, pair_summaries, repo=repo,
+                _bundle=_shared_bundle,
+            )
+        except Exception as e:
+            logger.warning("v10 bundle generation failed: %s", e)
+
     save_state(batch_id, state)
+
+
+def _render_forensic_bundle(
+    batch_id: str,
+    state: dict[str, Any],
+    all_events: list[dict[str, Any]],
+    pair_summaries: list[dict[str, Any]],
+    *,
+    repo: Any | None = None,
+    _bundle: dict[str, Any] | None = None,
+) -> None:
+    """Build and render the v8 forensic bundle for the batch.
+
+    Translates DocDiffOps state into the forensic.build_forensic_bundle
+    contract (documents, pairs, events) and emits four artifacts:
+      * forensic_v8.json — bundle dict
+      * forensic_v8.xlsx — multi-sheet workbook
+      * forensic_v8_explanatory.docx — methodology + control numbers
+      * forensic_v8_redgreen.docx — red/green editorial diff
+      * forensic_v8_summary.pdf  — compact PDF
+    """
+    from .forensic import bundle_from_batch_state
+    from .forensic_render import (
+        render_v8_docx_explanatory,
+        render_v8_docx_redgreen,
+        render_v8_pdf_summary,
+        render_v8_xlsx,
+    )
+    from .forensic_schema import validate_bundle
+
+    import os
+    from .forensic_actions import apply_actions_to_bundle
+
+    if _bundle is not None:
+        bundle = _bundle
+    else:
+        bundle = bundle_from_batch_state(state, all_events, pair_summaries)
+        corpus = os.environ.get("FORENSIC_ACTIONS_CORPUS")
+        bundle = apply_actions_to_bundle(
+            bundle,
+            corpus=corpus if corpus == "migration_v8" else None,
+        )
+
+    # Validate against the v8 JSON Schema; log warnings but don't block the
+    # pipeline — production bundles must still ship even if a non-essential
+    # field is malformed.
+    schema_errors = validate_bundle(bundle)
+    if schema_errors:
+        logger.warning(
+            "forensic v8 bundle schema-validation produced %d warnings (first 3: %s)",
+            len(schema_errors), schema_errors[:3],
+        )
+        state.setdefault("forensic_v8_schema_warnings", schema_errors[:20])
+
+    base = batch_dir(batch_id) / "reports" / "forensic_v8"
+    base.mkdir(parents=True, exist_ok=True)
+    write_json(base / "bundle.json", bundle)
+    add_artifact(state, "forensic_v8_json", base / "bundle.json",
+                 "Forensic v8 JSON bundle", repo=repo)
+
+    render_v8_xlsx(bundle, base / "forensic_v8.xlsx")
+    add_artifact(state, "forensic_v8_xlsx", base / "forensic_v8.xlsx",
+                 "Forensic v8 multi-sheet workbook", repo=repo)
+
+    render_v8_docx_explanatory(bundle, base / "forensic_v8_explanatory.docx")
+    add_artifact(state, "forensic_v8_docx", base / "forensic_v8_explanatory.docx",
+                 "Forensic v8 explanatory note (DOCX)", repo=repo)
+
+    render_v8_docx_redgreen(bundle, base / "forensic_v8_redgreen.docx")
+    add_artifact(state, "forensic_v8_redgreen_docx", base / "forensic_v8_redgreen.docx",
+                 "Forensic v8 red/green editorial diff (DOCX)", repo=repo)
+
+    render_v8_pdf_summary(bundle, base / "forensic_v8_summary.pdf")
+    add_artifact(state, "forensic_v8_pdf", base / "forensic_v8_summary.pdf",
+                 "Forensic v8 compact summary (PDF)", repo=repo)
+
+    state["forensic_v8"] = {
+        "schema_version": bundle["schema_version"],
+        "generated_at": bundle["generated_at"],
+        "control_numbers": bundle["control_numbers"],
+        "status_distribution_pairs": bundle["status_distribution_pairs"],
+    }
+
+
+def _render_v10_bundle(
+    batch_id: str,
+    state: dict[str, Any],
+    all_events: list[dict[str, Any]],
+    pair_summaries: list[dict[str, Any]],
+    *,
+    repo: Any | None = None,
+    _bundle: dict[str, Any] | None = None,
+) -> None:
+    """Build v10-quality bundle: correlations CSVs + 14-sheet XLSX + note (DOCX+PDF)
+    + integral matrix PDF. Output to batch_dir/reports/v10/.
+
+    Reuses the v8 forensic bundle (already built by _render_forensic_bundle); only
+    additional artifacts are produced. 8 artifacts total registered:
+      - v10_correlation_matrix_csv, v10_dependency_graph_csv,
+        v10_claim_provenance_csv, v10_coverage_heatmap_csv (4 CSVs)
+      - v10_xlsx (14-sheet workbook)
+      - v10_note_docx, v10_note_pdf (10-chapter note)
+      - v10_integral_matrix_pdf (A3 27x27 matrix)
+    """
+    from .forensic import bundle_from_batch_state
+    from .forensic_correlations import (
+        compute_correlation_matrix,
+        compute_claim_provenance,
+        compute_dependency_graph,
+        compute_coverage_heatmap,
+        emit_correlation_csvs,
+    )
+    from .forensic_render import render_v8_xlsx, render_integral_matrix_pdf
+    from .forensic_note import (
+        render_explanatory_note_docx,
+        render_explanatory_note_pdf,
+    )
+
+    bundle = _bundle if _bundle is not None else bundle_from_batch_state(state, all_events, pair_summaries)
+
+    # Build correlations dict for renderers.
+    # themes, theses, theme_doc_links are v9-specific; default to empty lists
+    # so compute_* functions (which handle empty inputs gracefully) don't crash.
+    docs = bundle.get("documents", [])
+    themes = state.get("themes", []) or []
+    theme_doc_links = state.get("theme_doc_links", []) or []
+    theses = state.get("theses", []) or []
+    # pair_relations: prefer state (v9), fall back to bundle pairs list
+    pair_relations = state.get("pair_relations", []) or bundle.get("pairs", [])
+
+    correlation_matrix = compute_correlation_matrix(themes, docs, theme_doc_links)
+    claim_provenance = compute_claim_provenance(theses, all_events, docs)
+    dependency_graph = compute_dependency_graph(pair_relations, docs)
+    coverage_heatmap = compute_coverage_heatmap(correlation_matrix, docs)
+
+    correlations = {
+        "correlation_matrix": correlation_matrix,
+        "claim_provenance": claim_provenance,
+        "dependency_graph": dependency_graph,
+        "coverage_heatmap": coverage_heatmap,
+    }
+
+    base = batch_dir(batch_id) / "reports" / "v10"
+    base.mkdir(parents=True, exist_ok=True)
+
+    # 1. CSVs (4 files)
+    csv_paths = emit_correlation_csvs(
+        {
+            "docs": docs,
+            "themes": themes,
+            "theme_doc_links": theme_doc_links,
+            "theses": theses,
+            "events": all_events,
+            "pair_relations": pair_relations,
+        },
+        base,
+    )
+    for name, path in csv_paths.items():
+        # name is e.g. "correlation_matrix.csv" -> type "v10_correlation_matrix_csv"
+        stem = name.removesuffix(".csv")
+        add_artifact(
+            state,
+            f"v10_{stem}_csv",
+            path,
+            f"v10 {stem.replace('_', ' ')} (CSV, UTF-8 BOM)",
+            repo=repo,
+        )
+
+    # 2. 14-sheet XLSX with correlation sheets
+    xlsx_path = base / "Интегральное_перекрестное_сравнение_v10.xlsx"
+    render_v8_xlsx(bundle, xlsx_path, correlations=correlations)
+    add_artifact(
+        state,
+        "v10_xlsx",
+        xlsx_path,
+        "v10 14-sheet XLSX with correlations + heatmaps",
+        repo=repo,
+    )
+
+    # 3. Explanatory note DOCX + PDF (10 chapters)
+    note_docx = base / "Пояснительная_записка_v10.docx"
+    note_pdf = base / "Пояснительная_записка_v10.pdf"
+    render_explanatory_note_docx(bundle, correlations, note_docx)
+    render_explanatory_note_pdf(bundle, correlations, note_pdf)
+    add_artifact(
+        state,
+        "v10_note_docx",
+        note_docx,
+        "v10 explanatory note (DOCX, 10 chapters)",
+        repo=repo,
+    )
+    add_artifact(
+        state,
+        "v10_note_pdf",
+        note_pdf,
+        "v10 explanatory note (PDF, 10 chapters, Cyrillic)",
+        repo=repo,
+    )
+
+    # 4. Integral matrix PDF (A3 landscape when N>=13)
+    matrix_pdf = base / "Интегральное_перекрестное_сравнение_v10.pdf"
+    render_integral_matrix_pdf(bundle, matrix_pdf)
+    add_artifact(
+        state,
+        "v10_integral_matrix_pdf",
+        matrix_pdf,
+        "v10 integral matrix (PDF, A3 landscape if N>=13)",
+        repo=repo,
+    )
+
+    state["v10_bundle"] = {
+        "enabled_via": "V10_BUNDLE_ENABLED",
+        "generated_at": bundle["generated_at"],
+        "artifacts_count": 8,
+        "output_dir": str(base.relative_to(batch_dir(batch_id))),
+    }
 
 
 def _build_repo() -> Any | None:
