@@ -355,6 +355,20 @@ def get_batch_audit(batch_id: str, limit: int = Query(200, ge=1, le=2000)):
     return {"batch_id": batch_id, "entries": repo.list_audit_for_batch(batch_id, limit=limit)}
 
 
+@app.get("/batches/{batch_id}/clusters")
+def get_batch_clusters(batch_id: str):
+    """Cross-pair topic clusters — same status+topic grouped across pairs."""
+    try:
+        state = load_state(batch_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="batch not found")
+    clusters = state.get("topic_clusters")
+    if clusters is None:
+        from .legal.cross_pair import cluster_events
+        clusters = cluster_events(state.get("diff_events", []))
+    return {"batch_id": batch_id, "clusters": clusters}
+
+
 def now_ts_int() -> int:
     """Monotonic-ish unix-ms helper for unique decision ids."""
     import time

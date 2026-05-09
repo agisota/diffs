@@ -209,6 +209,37 @@ def render_evidence_matrix(out_path: Path, state: dict[str, Any], all_events: li
     style_header(ws)
     autofit(ws)
 
+    # 11_topic_clusters: cross-pair clustering. Falls back to in-line
+    # cluster_events when state doesn't carry the precomputed list.
+    try:
+        clusters = state.get("topic_clusters")
+        if clusters is None:
+            from .legal.cross_pair import cluster_events as _ce
+            clusters = _ce(all_events)
+        ws = wb.create_sheet("11_topic_clusters")
+        ws.append([
+            "cluster_id", "topic", "status", "severity", "count",
+            "pair_count", "comparison_types", "explanations",
+        ])
+        for c in clusters or []:
+            ws.append([
+                c.get("cluster_id", ""),
+                c.get("topic", ""),
+                c.get("status", ""),
+                c.get("severity", ""),
+                int(c.get("count", 0)),
+                len(c.get("pair_ids", []) or []),
+                ", ".join(c.get("comparison_types", []) or []),
+                " | ".join(c.get("explanations", []) or []),
+            ])
+            fill = fill_for_status(c.get("status"))
+            for cell in ws[ws.max_row]:
+                cell.fill = fill
+        style_header(ws)
+        autofit(ws)
+    except Exception:
+        pass
+
     out_path.parent.mkdir(parents=True, exist_ok=True)
     wb.save(out_path)
     return out_path
