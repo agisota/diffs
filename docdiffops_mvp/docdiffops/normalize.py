@@ -6,7 +6,14 @@ from pathlib import Path
 from .utils import has_binary, run_cmd, safe_name
 
 PDF_EXTS = {".pdf"}
-OFFICE_EXTS = {".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx", ".odt", ".ods", ".odp"}
+OFFICE_EXTS = {
+    ".doc", ".docx", ".dot", ".dotx",   # Word
+    ".ppt", ".pptx", ".pps", ".ppsx",   # PowerPoint
+    ".xls", ".xlsx", ".xlsm", ".xltx",  # Excel
+    ".odt", ".ods", ".odp", ".odg",     # OpenDocument
+    ".rtf",                             # Rich Text
+    ".epub",                            # eBook (LibreOffice handles)
+}
 TEXT_EXTS = {".txt", ".md", ".csv", ".json", ".xml", ".html", ".htm"}
 
 

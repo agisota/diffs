@@ -22,6 +22,24 @@ APP_HTML = r"""<!doctype html>
   --rad: 6px; --rad-lg: 10px;
   --shadow: 0 6px 28px rgba(0,0,0,0.45);
 }
+
+/* viewer modal */
+.modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 100;
+            display: none; align-items: center; justify-content: center; }
+.modal-bg.open { display: flex; }
+.modal { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+         width: 92vw; height: 92vh; max-width: 1600px; display: flex; flex-direction: column;
+         box-shadow: var(--shadow); overflow: hidden; }
+.modal .head { display: flex; align-items: center; justify-content: space-between;
+               padding: 10px 16px; border-bottom: 1px solid var(--line); }
+.modal .head .title { font-weight: 500; font-size: 14px; word-break: break-all; }
+.modal .head .close { background: transparent; border: 1px solid var(--line); color: var(--mute);
+                      padding: 4px 12px; border-radius: 5px; }
+.modal .body { flex: 1; min-height: 0; }
+.modal .body iframe { width: 100%; height: 100%; border: 0; background: white; }
+.modal .body .split { display: grid; grid-template-columns: 1fr 1fr; height: 100%; gap: 1px; background: var(--line); }
+.modal .body .split > div { background: white; min-height: 0; }
+.modal .body .split iframe { height: 100%; }
 * { box-sizing: border-box; }
 html, body { height: 100%; }
 body {
@@ -328,6 +346,16 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
 </main>
 
 <div class="toast-wrap" id="toast-wrap"></div>
+
+<div class="modal-bg" id="viewer-modal" onclick="if(event.target===this)closeViewer()">
+  <div class="modal">
+    <div class="head">
+      <div class="title" id="viewer-title">…</div>
+      <button class="close" onclick="closeViewer()">×</button>
+    </div>
+    <div class="body" id="viewer-body"></div>
+  </div>
+</div>
 
 <script>
 const BASE = '';
@@ -764,7 +792,16 @@ function renderPairs(s) {
         ${high ? `<div style='color:var(--red)'>high <span style='color:var(--red)'>${high}</span></div>` : ''}
       </div>
       <div class='links'>
-        ${pairArts.map(a => `<a class='pill-link' href='${BASE}/batches/${currentBatchId}/download/${escapeHtml(a.path)}' target='_blank'>${escapeHtml(a.type || 'download')} ↓</a>`).join('')}
+        ${pairArts.map(a => {
+          const isPdf = (a.path || '').endsWith('.pdf');
+          const isHtml = (a.path || '').endsWith('.html');
+          const url = `${BASE}/batches/${currentBatchId}/download/${a.path}`;
+          if (isPdf || isHtml) {
+            return `<button class='pill-link' onclick='openViewer(${JSON.stringify(url)},${JSON.stringify(a.title || a.type || a.path)})'>👁 ${escapeHtml(a.type || 'view')}</button>` +
+                   ` <a class='pill-link' href='${url}' target='_blank'>↓</a>`;
+          }
+          return `<a class='pill-link' href='${url}' target='_blank'>${escapeHtml(a.type || 'download')} ↓</a>`;
+        }).join('')}
         <button class='pill-link' data-pair='${escapeHtml(p.pair_id)}'>view events →</button>
       </div>
     `;
@@ -894,6 +931,22 @@ async function loadAudit(batchId) {
   }
 }
 
+// -------- inline PDF/HTML viewer modal --------
+function openViewer(url, title) {
+  const m = document.getElementById('viewer-modal');
+  document.getElementById('viewer-title').textContent = title || url;
+  const body = document.getElementById('viewer-body');
+  body.innerHTML = `<iframe src="${url}" title="${title || ''}"></iframe>`;
+  m.classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+function closeViewer() {
+  document.getElementById('viewer-modal').classList.remove('open');
+  document.getElementById('viewer-body').innerHTML = '';
+  document.body.style.overflow = '';
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeViewer(); });
+
 // -------- artifacts --------
 function renderArtifacts(s) {
   const list = document.getElementById('arts-list');
@@ -903,12 +956,17 @@ function renderArtifacts(s) {
   for (const a of arts) {
     const card = document.createElement('div');
     card.className = 'art-card';
+    const url = `${BASE}/batches/${currentBatchId}/download/${a.path}`;
+    const isViewable = (a.path || '').match(/\.(pdf|html|md|txt)$/i);
     card.innerHTML = `
       <div class='info'>
         <div class='type'>${escapeHtml(a.type || '?')}</div>
         <div class='name'>${escapeHtml(a.title || a.path || '')}</div>
       </div>
-      <a class='pill-link' href='${BASE}/batches/${currentBatchId}/download/${escapeHtml(a.path)}' target='_blank'>↓ download</a>
+      <div style='display:flex;gap:6px'>
+        ${isViewable ? `<button class='pill-link' onclick='openViewer(${JSON.stringify(url)},${JSON.stringify(a.title || a.type || a.path)})'>👁 view</button>` : ''}
+        <a class='pill-link' href='${url}' target='_blank'>↓ download</a>
+      </div>
     `;
     list.appendChild(card);
   }
