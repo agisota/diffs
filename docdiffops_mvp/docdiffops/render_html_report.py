@@ -138,6 +138,7 @@ def render_html_report(
     )
     parts.append(
         "<nav><a href='#summary' class='active'>Сводка</a>"
+        "<a href='#topics'>Темы</a>"
         "<a href='#events'>События</a><a href='#docs'>Документы</a>"
         "<a href='#pairs'>Пары</a></nav>"
     )
@@ -151,6 +152,45 @@ def render_html_report(
             f"<div class='l'>{_esc(label)}</div></div>"
         )
     parts.append("</div></section>")
+
+    # Topics section — cross-pair clusters from llm_pair_diff dedup.
+    clusters = state.get("topic_clusters")
+    if clusters is None:
+        try:
+            from .legal.cross_pair import cluster_events as _ce
+            clusters = _ce(all_events)
+        except Exception:
+            clusters = []
+    if clusters:
+        parts.append("<section id='topics'><h2>Темы (cross-pair clusters)</h2>")
+        parts.append(
+            "<div class='muted' style='margin-bottom:12px;font-size:13px'>"
+            f"{len(clusters)} тематических кластеров. Один тезис, появляющийся в нескольких парах = один кластер."
+            "</div>"
+        )
+        parts.append("<table><thead><tr>"
+                     "<th style='width:90px'>статус</th>"
+                     "<th style='width:90px'>severity</th>"
+                     "<th>тема</th>"
+                     "<th style='width:60px'>events</th>"
+                     "<th style='width:60px'>pairs</th>"
+                     "<th>пояснения</th>"
+                     "</tr></thead><tbody>")
+        for c in clusters:
+            stat = (c.get("status") or "").lower()
+            sev = (c.get("severity") or "low").lower()
+            expls = " · ".join(c.get("explanations") or [])
+            parts.append(
+                "<tr>"
+                f"<td><span class='chip chip-{_esc(stat)}'>{_esc(stat)}</span></td>"
+                f"<td><span class='chip chip-{_esc(sev)}'>{_esc(sev)}</span></td>"
+                f"<td><strong>{_esc(c.get('topic',''))}</strong></td>"
+                f"<td class='mono'>{_esc(c.get('count', 0))}</td>"
+                f"<td class='mono'>{_esc(len(c.get('pair_ids', []) or []))}</td>"
+                f"<td class='quote'>{_esc(expls)}</td>"
+                "</tr>"
+            )
+        parts.append("</tbody></table></section>")
 
     # Events table
     parts.append("<section id='events'><h2>События</h2>")

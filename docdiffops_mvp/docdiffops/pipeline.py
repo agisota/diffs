@@ -234,27 +234,49 @@ def run_all_pairs(
 
         # PR-5.7: when the LLM pair-diff is active, replace the fuzzy
         # block_semantic_diff event noise with a curated semantic list.
-        # The fuzzy events are still generated (and cached) above so we
-        # can A/B; the pipeline then drops them from the output if the
-        # LLM produced a usable result. Set
-        # KEEP_FUZZY_WITH_LLM_PAIR_DIFF=true to retain both layers.
+        # KEEP_FUZZY_WITH_LLM_PAIR_DIFF=true retains both layers.
+        # When LLM returns zero events (truncation, transport error,
+        # empty parse), we still drop the fuzzy noise and emit a single
+        # synthetic ``llm_unavailable`` placeholder so reviewers see a
+        # clean signal instead of hundreds of token-overlap rows.
         if llm_pair_diff_enabled():
             try:
                 llm_events = llm_pair_diff(pair, lhs_doc, rhs_doc, lhs_blocks, rhs_blocks)
             except Exception as e:
                 logger.warning("llm_pair_diff failed for %s: %s", pair.get("pair_id"), e)
                 llm_events = []
+            keep_fuzzy = os.getenv("KEEP_FUZZY_WITH_LLM_PAIR_DIFF", "false").lower() == "true"
             if llm_events:
-                keep_fuzzy = os.getenv("KEEP_FUZZY_WITH_LLM_PAIR_DIFF", "false").lower() == "true"
                 if not keep_fuzzy:
-                    # Drop the fuzzy events; keep llm-curated set.
                     events = list(llm_events)
                 else:
                     events.extend(llm_events)
                 summary["llm_pair_diff_events"] = len(llm_events)
                 summary["events_total"] = len(events)
-                # Recompute the per-status counts for the summary so the
-                # XLSX/HTML rendering reflects what's actually emitted.
+                _refresh_status_counts(summary, events)
+            elif not keep_fuzzy:
+                # Drop fuzzy noise; emit one placeholder event flagging
+                # the pair for manual review so the absence is visible.
+                placeholder = {
+                    "event_id": "evt_llm_failed_" + (pair.get("pair_id") or "?")[-12:],
+                    "pair_id": pair.get("pair_id"),
+                    "comparison_type": "llm_unavailable",
+                    "status": "manual_review",
+                    "severity": "medium",
+                    "score": None,
+                    "confidence": 0.0,
+                    "review_required": True,
+                    "lhs_doc_id": lhs_doc.get("doc_id"),
+                    "rhs_doc_id": rhs_doc.get("doc_id"),
+                    "topic": "LLM-сравнение не удалось",
+                    "lhs": {"doc_id": lhs_doc.get("doc_id"), "page_no": None, "block_id": None, "bbox": None, "quote": None},
+                    "rhs": {"doc_id": rhs_doc.get("doc_id"), "page_no": None, "block_id": None, "bbox": None, "quote": None},
+                    "explanation_short": "Семантический LLM-сравниватель не вернул валидные события для этой пары. Перезапустите с другой моделью (LLM_PAIR_DIFF_MODEL) или включите fuzzy fallback (KEEP_FUZZY_WITH_LLM_PAIR_DIFF=true).",
+                }
+                events = [placeholder]
+                summary["llm_pair_diff_events"] = 0
+                summary["llm_unavailable"] = True
+                summary["events_total"] = 1
                 _refresh_status_counts(summary, events)
 
         # PR-3.3 / PR-3.6: when both sides have a structurable doc_type,
