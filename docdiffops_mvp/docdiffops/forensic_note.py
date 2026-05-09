@@ -179,9 +179,34 @@ def _claim_provenance_rows(correlations: dict[str, Any]) -> list[list[str]]:
 
 
 def _coverage_heatmap_rows(correlations: dict[str, Any]) -> list[list[str]]:
-    hmap: list[dict[str, Any]] = list(correlations.get("coverage_heatmap", []))
+    """Normalize the heatmap to a list of [theme_id, theme_name, r1, r2, r3] rows.
+
+    Accepts either the v10 production shape from
+    forensic_correlations.compute_coverage_heatmap (dict[theme_id ->
+    dict[rank_int -> count]]) or the legacy list-of-dicts shape used by the
+    offline migration_v10_out scripts. Theme names are looked up in
+    correlations["theme_names"] when available, otherwise the theme id is
+    used as a fallback display label.
+    """
+    hmap_raw = correlations.get("coverage_heatmap", [])
+    theme_names: dict[str, str] = correlations.get("theme_names", {}) or {}
     rows: list[list[str]] = []
-    for row in hmap:
+
+    if isinstance(hmap_raw, dict):
+        for theme_id, ranks in hmap_raw.items():
+            ranks = ranks or {}
+            rows.append([
+                str(theme_id),
+                str(theme_names.get(theme_id, theme_id)),
+                str(ranks.get(1, ranks.get("1", 0))),
+                str(ranks.get(2, ranks.get("2", 0))),
+                str(ranks.get(3, ranks.get("3", 0))),
+            ])
+        return rows
+
+    for row in hmap_raw:
+        if not isinstance(row, dict):
+            continue
         rows.append([
             str(row.get("theme_id", "")),
             str(row.get("theme_name", "")),
