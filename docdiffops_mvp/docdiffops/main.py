@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import io
 import logging
+import zipfile
 from pathlib import Path
 from typing import Annotated
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 
 from .app_html import APP_HTML
 from pydantic import BaseModel, Field
@@ -367,6 +369,247 @@ def get_batch_clusters(batch_id: str):
         from .legal.cross_pair import cluster_events
         clusters = cluster_events(state.get("diff_events", []))
     return {"batch_id": batch_id, "clusters": clusters}
+
+
+@app.get("/batches/{batch_id}/forensic")
+def get_batch_forensic(batch_id: str):
+    """Return the v8 forensic JSON bundle for ``batch_id``.
+
+    The bundle is rendered by ``pipeline._render_forensic_bundle`` after a
+    batch finishes; if the file is missing the endpoint returns 404 — no
+    on-the-fly recomputation. Inspect ``state["forensic_v8"]`` for a
+    summary if the full bundle is too large.
+    """
+    try:
+        state = load_state(batch_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="batch not found")
+    bundle_path = batch_dir(batch_id) / "reports" / "forensic_v8" / "bundle.json"
+    if not bundle_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail="forensic v8 bundle not generated yet — run /batches/{batch_id}/run first",
+        )
+    import json
+    return json.loads(bundle_path.read_text(encoding="utf-8"))
+
+
+@app.get("/batches/{old_batch_id}/forensic/compare/{new_batch_id}")
+def get_forensic_compare(
+    old_batch_id: str,
+    new_batch_id: str,
+    persist: bool = Query(False, description="If true, save delta as a batch artifact"),
+    artifacts: bool = Query(False, description="If true, also render .xlsx/.docx/.pdf delta reports (implies persist)"),
+):
+    """Compare two forensic v8 bundles and return a delta report.
+
+    Returns 404 if either bundle is not yet generated. Returns 422 if the
+    bundles have incompatible schema versions. When ``persist=true`` the
+    delta JSON is written to the new batch's reports dir and registered as
+    an artifact so it appears in /batches/{id}/artifacts.
+    """
+    import json as _json
+    from .forensic_delta import compare_bundles
+
+    def _load(bid: str) -> dict:
+        p = batch_dir(bid) / "reports" / "forensic_v8" / "bundle.json"
+        if not p.exists():
+            raise HTTPException(
+                status_code=404,
+                detail=f"forensic bundle for batch {bid!r} not generated yet",
+            )
+        return _json.loads(p.read_text(encoding="utf-8"))
+
+    old_bundle = _load(old_batch_id)
+    new_bundle = _load(new_batch_id)
+    try:
+        delta = compare_bundles(old_bundle, new_bundle)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    if persist or artifacts:
+        out_dir = batch_dir(new_batch_id) / "reports" / "forensic_v8"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        delta_path = out_dir / f"delta_from_{old_batch_id}.json"
+        delta_path.write_text(
+            _json.dumps(delta, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        try:
+            from .state import add_artifact as _add_artifact
+            state = load_state(new_batch_id)
+            _add_artifact(
+                state, "forensic_delta", delta_path,
+                title=f"Forensic delta vs {old_batch_id}",
+            )
+            if artifacts:
+                from .forensic_delta_render import (
+                    render_delta_docx, render_delta_pdf, render_delta_xlsx,
+                )
+                xlsx_path = out_dir / f"delta_from_{old_batch_id}.xlsx"
+                docx_path = out_dir / f"delta_from_{old_batch_id}.docx"
+                pdf_path = out_dir / f"delta_from_{old_batch_id}.pdf"
+                render_delta_xlsx(delta, xlsx_path)
+                render_delta_docx(delta, docx_path)
+                render_delta_pdf(delta, pdf_path)
+                _add_artifact(state, "forensic_delta_xlsx", xlsx_path,
+                              title=f"Forensic delta XLSX vs {old_batch_id}")
+                _add_artifact(state, "forensic_delta_docx", docx_path,
+                              title=f"Forensic delta DOCX vs {old_batch_id}")
+                _add_artifact(state, "forensic_delta_pdf", pdf_path,
+                              title=f"Forensic delta PDF vs {old_batch_id}")
+            save_state(new_batch_id, state)
+        except Exception as e:
+            logger.warning("delta artifact registration failed: %s", e)
+    return delta
+
+
+@app.get("/forensic/trend")
+def get_forensic_trend(ids: str = Query(..., description="Comma-separated batch IDs in chronological order")):
+    """Aggregate N forensic bundles into a time-series trend report.
+
+    Returns 404 if any batch's bundle is not yet generated. Returns 422
+    on schema version mismatch. ``ids`` order is taken as chronological.
+    """
+    import json as _json
+    from .forensic_trend import compute_trend
+
+    batch_ids = [b.strip() for b in ids.split(",") if b.strip()]
+    if not batch_ids:
+        raise HTTPException(status_code=400, detail="ids parameter is empty")
+
+    bundles = []
+    for bid in batch_ids:
+        p = batch_dir(bid) / "reports" / "forensic_v8" / "bundle.json"
+        if not p.exists():
+            raise HTTPException(
+                status_code=404,
+                detail=f"forensic bundle for batch {bid!r} not generated yet",
+            )
+        bundles.append(_json.loads(p.read_text(encoding="utf-8")))
+
+    try:
+        return compute_trend(bundles)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@app.get("/batches/{batch_id}/forensic/v10")
+def get_batch_v10_bundle(batch_id: str):
+    """Return URLs for all v10 artifacts.
+
+    Returns 404 if v10 bundle not generated (V10_BUNDLE_ENABLED=false or
+    pipeline hasn't completed).
+    """
+    base = batch_dir(batch_id) / "reports" / "v10"
+    if not base.exists() or not (base / "correlation_matrix.csv").exists():
+        raise HTTPException(
+            status_code=404,
+            detail="v10 bundle not generated for this batch (V10_BUNDLE_ENABLED=false?)",
+        )
+    return {
+        "batch_id": batch_id,
+        "artifacts": {
+            "xlsx": f"/batches/{batch_id}/forensic/xlsx_v10",
+            "note_docx": f"/batches/{batch_id}/forensic/note_docx",
+            "note_pdf": f"/batches/{batch_id}/forensic/note_pdf",
+            "integral_matrix_pdf": f"/batches/{batch_id}/forensic/integral_matrix_pdf",
+            "correlation_matrix_csv": f"/batches/{batch_id}/forensic/correlation_matrix_csv",
+            "dependency_graph_csv": f"/batches/{batch_id}/forensic/dependency_graph_csv",
+            "claim_provenance_csv": f"/batches/{batch_id}/forensic/claim_provenance_csv",
+            "coverage_heatmap_csv": f"/batches/{batch_id}/forensic/coverage_heatmap_csv",
+        },
+    }
+
+
+@app.get("/batches/{batch_id}/forensic/v10.zip")
+def download_batch_v10_zip(batch_id: str):
+    """Stream a ZIP archive containing all 8 v10 forensic artifacts.
+
+    Convenience for downloading the full v10 bundle in one request instead of
+    8 separate /forensic/{kind} calls.
+
+    Returns 404 if v10 dir is missing or any expected artifact is absent.
+    """
+    base = batch_dir(batch_id) / "reports" / "v10"
+    if not base.exists():
+        raise HTTPException(
+            status_code=404,
+            detail="v10 bundle not generated for this batch (V10_BUNDLE_ENABLED=false?)",
+        )
+
+    expected_files = [
+        "Интегральное_перекрестное_сравнение_v10.xlsx",
+        "Пояснительная_записка_v10.docx",
+        "Пояснительная_записка_v10.pdf",
+        "Интегральное_перекрестное_сравнение_v10.pdf",
+        "correlation_matrix.csv",
+        "dependency_graph.csv",
+        "claim_provenance.csv",
+        "coverage_heatmap.csv",
+    ]
+    missing = [f for f in expected_files if not (base / f).exists()]
+    if missing:
+        raise HTTPException(
+            status_code=404,
+            detail=f"v10 bundle incomplete; missing files: {missing}",
+        )
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for fname in expected_files:
+            zf.write(base / fname, arcname=fname)
+    buf.seek(0)
+    payload = buf.getvalue()
+
+    return Response(
+        content=payload,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="forensic_v10_{batch_id}.zip"',
+            "Content-Length": str(len(payload)),
+        },
+    )
+
+
+@app.get("/batches/{batch_id}/forensic/{kind}")
+def download_forensic(batch_id: str, kind: str):
+    """Download forensic artifact: v8 (json/xlsx/docx/redgreen_docx/pdf) or
+    v10 (xlsx_v10/note_docx/note_pdf/integral_matrix_pdf/correlation_matrix_csv/
+    dependency_graph_csv/claim_provenance_csv/coverage_heatmap_csv).
+
+    Files served from batch_dir/reports/{forensic_v8|v10}/. Unknown kinds -> 400;
+    missing files -> 404.
+    """
+    v8_filenames = {
+        "json": "bundle.json",
+        "xlsx": "forensic_v8.xlsx",
+        "docx": "forensic_v8_explanatory.docx",
+        "redgreen_docx": "forensic_v8_redgreen.docx",
+        "pdf": "forensic_v8_summary.pdf",
+    }
+    v10_filenames = {
+        "xlsx_v10": "Интегральное_перекрестное_сравнение_v10.xlsx",
+        "note_docx": "Пояснительная_записка_v10.docx",
+        "note_pdf": "Пояснительная_записка_v10.pdf",
+        "integral_matrix_pdf": "Интегральное_перекрестное_сравнение_v10.pdf",
+        "correlation_matrix_csv": "correlation_matrix.csv",
+        "dependency_graph_csv": "dependency_graph.csv",
+        "claim_provenance_csv": "claim_provenance.csv",
+        "coverage_heatmap_csv": "coverage_heatmap.csv",
+    }
+    if kind in v8_filenames:
+        p = batch_dir(batch_id) / "reports" / "forensic_v8" / v8_filenames[kind]
+    elif kind in v10_filenames:
+        p = batch_dir(batch_id) / "reports" / "v10" / v10_filenames[kind]
+    else:
+        all_kinds = sorted(list(v8_filenames) + list(v10_filenames))
+        raise HTTPException(
+            status_code=400,
+            detail=f"unknown kind {kind!r}; expected one of {all_kinds}",
+        )
+    if not p.exists():
+        raise HTTPException(status_code=404, detail=f"forensic artifact {kind!r} not found")
+    return FileResponse(p, filename=p.name)
 
 
 def now_ts_int() -> int:
