@@ -13,12 +13,14 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock
 
-# Stub heavy native deps not installed in the test venv so the import
-# chain (main → worker → pipeline → extract) resolves without errors.
+# Stub only modules genuinely missing from the test venv. Stubbing real
+# installed packages (bs4, pptx, rapidfuzz) leaks MagicMock-replaced symbols
+# into every later test in the same pytest session — legal/structural_diff
+# and legal/claims rely on rapidfuzz.fuzz.token_set_ratio returning a real
+# float, so stubbing it here breaks test_golden_legal_pipeline and
+# test_legal_* in the full suite.
 _STUBS = [
-    "fitz", "bs4", "bs4.element",
-    "pptx", "pptx.util",
-    "rapidfuzz", "rapidfuzz.fuzz",
+    "fitz",
     "sklearn", "sklearn.feature_extraction", "sklearn.feature_extraction.text",
 ]
 for _m in _STUBS:
