@@ -18,6 +18,7 @@ from .legal import (
 )
 from .legal.cross_pair import cluster_events
 from .legal.llm_pair_diff import llm_pair_summary
+from .legal.pair_score import pair_similarity_score, score_band
 from .executive import render_executive_md
 from .extract import extract_any
 from .normalize import convert_to_canonical_pdf
@@ -40,6 +41,13 @@ from .settings import COMPARATOR_VERSION, EXTRACTOR_VERSION  # PR-1.6: single so
 # helpers. state.py also lazily builds its own repo when none is passed
 # (used by the upload path in main.py); pipeline always passes its
 # instance so a single run_batch call shares the same repo object.
+
+
+def _attach_pair_score(summary: dict[str, Any], events: list[dict[str, Any]]) -> None:
+    """Attach a single 0-100 similarity score + band label to ``summary``."""
+    score = pair_similarity_score(events)
+    summary["score_pct"] = score
+    summary["score_band"] = score_band(score)
 
 
 def _refresh_status_counts(summary: dict[str, Any], events: list[dict[str, Any]]) -> None:
@@ -345,6 +353,9 @@ def run_all_pairs(
         pair_dir.mkdir(parents=True, exist_ok=True)
         write_jsonl(pair_dir / "diff_events.jsonl", events)
         write_json(pair_dir / "pair_summary.json", summary)
+        # Compute per-pair similarity score from final event list.
+        _attach_pair_score(summary, events)
+
         all_events.extend(events)
         pair_summaries.append(summary)
 

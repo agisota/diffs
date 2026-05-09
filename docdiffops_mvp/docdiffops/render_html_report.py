@@ -266,21 +266,35 @@ def render_html_report(
     parts.append("<section id='pairs'><h2>Пары</h2>")
     parts.append(
         "<table><thead><tr>"
-        "<th>pair_id</th><th>LHS</th><th>RHS</th><th>events</th>"
-        "<th>partial</th><th>added</th><th>deleted</th><th>cache</th>"
+        "<th>pair_id</th><th>LHS</th><th>RHS</th>"
+        "<th>score</th><th>events</th>"
+        "<th>partial</th><th>added</th><th>deleted</th><th>narrative</th>"
         "</tr></thead><tbody>"
     )
     for s in pair_summaries or []:
+        score = s.get("score_pct")
+        score_color = (
+            "var(--green)" if (score or 0) >= 70 else
+            "var(--amber)" if (score or 0) >= 40 else
+            "var(--red)"
+        ) if score is not None else "var(--mute)"
+        score_cell = (
+            f"<span style='color:{score_color};font-weight:600'>{score}</span> "
+            f"<span class='muted' style='font-size:11px'>{_esc(s.get('score_band',''))}</span>"
+            if score is not None else "—"
+        )
+        narrative = (s.get("narrative") or "").strip()
         parts.append(
             "<tr>"
             f"<td><code>{_esc(s.get('pair_id'))}</code></td>"
             f"<td><code>{_esc(s.get('lhs_doc_id'))}</code></td>"
             f"<td><code>{_esc(s.get('rhs_doc_id'))}</code></td>"
+            f"<td>{score_cell}</td>"
             f"<td>{_esc(s.get('events_total'))}</td>"
             f"<td>{_esc(s.get('partial_count'))}</td>"
             f"<td>{_esc(s.get('added_count'))}</td>"
             f"<td>{_esc(s.get('deleted_count'))}</td>"
-            f"<td>{'hit' if s.get('cache_hit') else '—'}</td>"
+            f"<td class='quote' style='max-width:420px'>{_esc(narrative)}</td>"
             "</tr>"
         )
     parts.append("</tbody></table></section>")
