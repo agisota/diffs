@@ -182,6 +182,15 @@ main.app { padding: 28px 32px 64px; max-width: 1500px; margin: 0 auto; }
 .art-card .type { font-size: 11px; color: var(--mute); text-transform: uppercase; letter-spacing: 0.05em; }
 .art-card .name { font-weight: 500; font-size: 13px; word-break: break-word; }
 
+/* ------------------- v10 forensic bundle ------------------- */
+.v10-bundle { margin-top: 20px; border: 1px solid var(--line); border-radius: var(--rad); padding: 14px 18px; background: var(--panel); }
+.v10-bundle h3 { margin: 0 0 12px; font-size: 14px; font-weight: 600; letter-spacing: 0.01em; }
+.v10-links { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
+.v10-links li { display: flex; align-items: center; gap: 8px; }
+.v10-links .v10-pill { background: var(--panel-2); border: 1px solid var(--line); color: var(--fg); padding: 5px 12px; border-radius: 4px; font-size: 12px; text-decoration: none; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.v10-links .v10-pill:hover { border-color: var(--blue); text-decoration: none; }
+.v10-stub { font-size: 11.5px; color: var(--mute); margin-top: 10px; }
+
 /* ------------------- toast ------------------- */
 .toast-wrap { position: fixed; bottom: 24px; right: 24px; display: flex; flex-direction: column; gap: 8px; z-index: 100; }
 .toast { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--blue); border-radius: 5px; padding: 10px 14px; min-width: 240px; box-shadow: var(--shadow); animation: slide-in 0.2s ease; font-size: 13px; }
@@ -314,6 +323,7 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
 
     <div id="dtab-artifacts" class="dtab" hidden>
       <div id="arts-list" class="arts-list"></div>
+      <div id="v10-bundle-block" hidden></div>
     </div>
 
     <div id="dtab-topics" class="dtab" hidden>
@@ -898,20 +908,50 @@ async function loadAudit(batchId) {
 function renderArtifacts(s) {
   const list = document.getElementById('arts-list');
   const arts = s.artifacts || [];
-  if (!arts.length) { list.innerHTML = "<div class='empty'>(нет артефактов)</div>"; return; }
-  list.innerHTML = '';
-  for (const a of arts) {
-    const card = document.createElement('div');
-    card.className = 'art-card';
-    card.innerHTML = `
-      <div class='info'>
-        <div class='type'>${escapeHtml(a.type || '?')}</div>
-        <div class='name'>${escapeHtml(a.title || a.path || '')}</div>
-      </div>
-      <a class='pill-link' href='${BASE}/batches/${currentBatchId}/download/${escapeHtml(a.path)}' target='_blank'>↓ download</a>
-    `;
-    list.appendChild(card);
+  if (!arts.length) { list.innerHTML = "<div class='empty'>(нет артефактов)</div>"; }
+  else {
+    list.innerHTML = '';
+    for (const a of arts) {
+      const card = document.createElement('div');
+      card.className = 'art-card';
+      card.innerHTML = `
+        <div class='info'>
+          <div class='type'>${escapeHtml(a.type || '?')}</div>
+          <div class='name'>${escapeHtml(a.title || a.path || '')}</div>
+        </div>
+        <a class='pill-link' href='${BASE}/batches/${currentBatchId}/download/${escapeHtml(a.path)}' target='_blank'>↓ download</a>
+      `;
+      list.appendChild(card);
+    }
   }
+  renderV10Bundle(s);
+}
+
+// -------- v10 forensic bundle --------
+function renderV10Bundle(s) {
+  const block = document.getElementById('v10-bundle-block');
+  if (!s.v10_bundle) { block.hidden = true; block.innerHTML = ''; return; }
+  const V10_KINDS = [
+    { kind: 'xlsx_v10',               label: '📊 14-листный XLSX (heatmap, correlations)' },
+    { kind: 'note_docx',              label: '📄 Пояснительная записка (DOCX)' },
+    { kind: 'note_pdf',               label: '📄 Пояснительная записка (PDF)' },
+    { kind: 'integral_matrix_pdf',    label: '🗺️ Интегральная матрица (PDF, A3)' },
+    { kind: 'correlation_matrix_csv', label: '📈 Correlation matrix (CSV)' },
+    { kind: 'dependency_graph_csv',   label: '🔗 Dependency graph (CSV)' },
+    { kind: 'claim_provenance_csv',   label: '🧾 Claim provenance (CSV)' },
+    { kind: 'coverage_heatmap_csv',   label: '🌡️ Coverage heatmap (CSV)' },
+  ];
+  const links = V10_KINDS.map(({ kind, label }) =>
+    `<li><a class='v10-pill' href='${BASE}/batches/${currentBatchId}/forensic/${escapeHtml(kind)}' target='_blank'>${escapeHtml(label)} ↓</a></li>`
+  ).join('');
+  block.innerHTML = `
+    <div class='v10-bundle'>
+      <h3>📦 v10 Forensic Bundle</h3>
+      <ul class='v10-links'>${links}</ul>
+      <a class='v10-pill v10-zip' href='${BASE}/batches/${currentBatchId}/forensic/v10.zip' target='_blank'>📦 Скачать всё одним архивом ↓</a>
+    </div>
+  `;
+  block.hidden = false;
 }
 
 // -------- init --------
