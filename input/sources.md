@@ -8,11 +8,14 @@ Open-source unless noted.
 | File | Source URL | Description | Source rank |
 | --- | --- | --- | --- |
 | `concept_2026_2030_kremlin.html` | http://www.kremlin.ru/acts/bank/52490 | New migration policy concept 2026–2030, Presidential Decree | 1 (official NPA) |
-| ⚠️ `concept_2019_2025_ukaz_622.pdf` | https://tinao.mos.ru/Ukaz_Prezidenta_RF_ot_31.10.2018_622_O_Kontseptsii_gosudarstvennoy_migratsionnoy_politiki_Rossiyskoy_Federatsii_na_2019_2025_gody_.pdf | Old migration policy concept 2019–2025, Presidential Decree №622 of 31.10.2018 | 1 (official NPA) |
+| `ukaz_622_concept_2019_2025_kremlin.html` | http://www.kremlin.ru/acts/bank/43577 | Old migration policy concept 2019–2025, Presidential Decree №622 of 31.10.2018 | 1 (official NPA) |
+| `ukaz_580_grazhdanstvo_2025.html` | http://www.kremlin.ru/acts/bank/52489 | Presidential Decree on simplifying citizenship procedures (2025) | 1 (official NPA) |
 | `fz_109_migration_registration.html` | https://normativ.kontur.ru/document?moduleId=1&documentId=504542 | Federal Law on migration registration of foreign citizens (2006, ed. 31.07.2025) | 2 (legal system) |
 | `rasporjazenie_30r_2024.pdf` | https://www.profiz.ru/upl/pictures/SR/_01_2024/Распоряжение Правительства Российской Федерации от 16.01.2024 № 30-р.pdf | Government Order 30-r of 16.01.2024 on Concept implementation | 1 (official NPA) |
+| `post_pravitelstva_794_deportacia.html` | http://government.ru/docs/all/52186/ | Government Order on deportation/expulsion procedures | 1 (official NPA) |
 | ⚠️ `klerk_normative_summary.html` | https://www.klerk.ru/blogs/astral/658232/ | Klerk.ru summary of regulations for foreign workers | 3 (analytics/blog) |
-| ⚠️ `mineconomy_migration_index.html` | https://www.economy.gov.ru/material/departments/d04/migracionnaya_politika/ | Ministry of Economy migration policy materials index | 2 (departmental) |
+| `fom_migration_2024.html` | https://fom.ru/Mir/14856 | FOM analytics: Russian attitudes toward migrants (2024) | 3 (analytics) |
+| `levada_migrants.html` | https://www.levada.ru/2024/06/11/migranty-v-rossii/ | Levada-Centre analytics: migrants in Russia (June 2024) | 3 (analytics) |
 | `vciom_migration_2026.pdf` ¹ | provided by user | VCIOM analytics presentation on migration indicators | 3 (analytics presentation) |
 
 ¹ Compressed via `gs -dPDFSETTINGS=/ebook` from 7.5 MB → 2.75 MB to fit GitHub HTTP push window (server enforces ~30 s on receive-pack at this network's upload rate). Visual content preserved; if pixel-exact sourcing is needed, re-download from the analytics team and replace.
@@ -26,14 +29,19 @@ Open-source unless noted.
 
 ## Download status
 
-⚠️ marks files that could not be retrieved automatically from this network on 2026-05-08
-(connection timeout to tinao.mos.ru and economy.gov.ru, partial response from klerk.ru):
+⚠️ marks files that could not be retrieved automatically from this network on 2026-05-09:
 
-- `concept_2019_2025_ukaz_622.pdf` — **missing**, retrieve manually before running batch
-- `mineconomy_migration_index.html` — **missing**, retrieve manually before running batch
 - `klerk_normative_summary.html` — **partial** (16 KB, truncated mid-page), re-download recommended
 
-The remaining 6 input files are present and intact (sha256 will be computed at upload time).
+Sites that were geo-blocked / unreachable from the download host (use a different network or VPN
+to retrieve manually):
+- consultant.ru (returned bot-block stubs ~16 KB for FZ 115 / 114 / 62 / 99)
+- pravo.gov.ru, docs.cntd.ru (connection timeout)
+- mvd.ru, economy.gov.ru, tinao.mos.ru (connection timeout)
+- vciom.ru analytical-reviews endpoints (returned 2.3 KB stubs)
+
+The remaining files are present and intact. Total: **12 distinct documents** suitable for a
+C(12, 2) = 66-pair batch.
 
 ## Source ranking rule
 
