@@ -354,3 +354,35 @@ def test_pdf_renders_with_full_bundle(tmp_path: Path) -> None:
     size = out.stat().st_size
     # A minimal 10-chapter PDF should be at least 20 KB
     assert size > 20_000, f"PDF suspiciously small: {size} bytes"
+
+
+# ---------------------------------------------------------------------------
+# Test 9: regression — production correlations dict shape
+# (forensic_correlations.compute_coverage_heatmap returns
+#  dict[theme_id -> dict[rank_int -> count]], not list[dict]).
+# Pre-fix this crashed _coverage_heatmap_rows with AttributeError.
+# ---------------------------------------------------------------------------
+
+def test_coverage_heatmap_dict_shape_doesnt_crash(tmp_path: Path) -> None:
+    """forensic_note must accept the production dict shape from
+    forensic_correlations.compute_coverage_heatmap, not just the legacy
+    list[dict] shape.
+    """
+    from docdiffops.forensic_note import render_explanatory_note_docx
+
+    bundle = _make_bundle()
+    # Production shape: dict keyed by theme_id, values are {rank_int: count}.
+    correlations_dict_shape = {
+        "correlation_matrix": {"T01": {"D01": 2, "D02": 1}},
+        "claim_provenance": [],
+        "dependency_graph": [],
+        "coverage_heatmap": {
+            "T01": {1: 2, 2: 1, 3: 0},
+            "T02": {1: 0, 2: 1, 3: 3},
+        },
+        "theme_names": {"T01": "Регистрация", "T02": "Трудоустройство"},
+    }
+    out = tmp_path / "note_dict.docx"
+    render_explanatory_note_docx(bundle, correlations_dict_shape, out)
+    assert out.exists()
+    assert out.stat().st_size > 10_000
