@@ -45,8 +45,9 @@ _SYSTEM_PROMPT = (
     "  \"rhs_quote\": дословная цитата из RHS (пусто если deleted),\n"
     "  \"explanation\": одно русское предложение, что и почему отличается\n"
     "}\n\n"
-    "Возвращай 5-25 значимых событий, high-severity первыми. "
-    "Цитируй только то, что реально есть в текстах. Ничего, кроме JSON."
+    "Возвращай 5-10 САМЫХ значимых событий (high-severity первыми). "
+    "Цитаты ≤ 100 символов. Цитируй только то, что реально есть. "
+    "Ничего, кроме JSON-объекта."
 )
 
 _USER_TEMPLATE = (
@@ -131,11 +132,11 @@ def llm_pair_diff(
         rhs=rhs_text,
     )
 
+    max_tokens = int(os.getenv("LLM_PAIR_DIFF_MAX_TOKENS", "4000"))
     try:
         raw = _sem._post_chat(
             api_key, model, _SYSTEM_PROMPT, user,
-            max_tokens=int(os.getenv("LLM_PAIR_DIFF_MAX_TOKENS", "1500")),
-            json_object=True,
+            max_tokens=max_tokens, json_object=True,
         )
     except Exception as e:
         logger.warning("llm_pair_diff HTTP failed for %s: %s", pair.get("pair_id"), e)
@@ -143,8 +144,7 @@ def llm_pair_diff(
         try:
             raw = _sem._post_chat(
                 api_key, model, _SYSTEM_PROMPT, user,
-                max_tokens=int(os.getenv("LLM_PAIR_DIFF_MAX_TOKENS", "1500")),
-                json_object=False,
+                max_tokens=max_tokens, json_object=False,
             )
         except Exception as e2:
             logger.warning("llm_pair_diff retry failed: %s", e2)
@@ -249,18 +249,78 @@ def _parse_json_array(raw: str) -> list[Any]:
     try:
         parsed = json.loads(blob)
     except json.JSONDecodeError:
-        # Try a forgiving fallback: drop trailing commas.
+        # Repair attempt 1: drop trailing commas.
         cleaned = re.sub(r",(\s*[}\]])", r"\1", blob)
         try:
             parsed = json.loads(cleaned)
         except Exception:
-            return []
+            # Repair attempt 2: response was truncated mid-object.
+            # Find the last complete object inside the events array
+            # and rebuild a valid {"events":[...]} envelope.
+            try:
+                parsed = _salvage_truncated_events(blob)
+            except Exception:
+                return []
+            if parsed is None:
+                return []
 
     if isinstance(parsed, list):
         return parsed
     if isinstance(parsed, dict):
         return [parsed]
     return []
+
+
+def _salvage_truncated_events(blob: str) -> dict | None:
+    """Recover from a response cut off mid-event.
+
+    Walks the blob to find the last balanced ``{...}`` that lives inside
+    an ``events`` array, then closes the array+object explicitly. Returns
+    ``None`` if no recoverable structure is present.
+    """
+    # Find the events array opener.
+    arr_start = blob.find('"events"')
+    if arr_start < 0:
+        return None
+    arr_start = blob.find("[", arr_start)
+    if arr_start < 0:
+        return None
+
+    # Walk forward, tracking balanced braces of complete objects.
+    depth = 0
+    in_str = False
+    esc = False
+    last_complete = arr_start  # position right after last complete `{...}`
+    i = arr_start + 1
+    while i < len(blob):
+        c = blob[i]
+        if in_str:
+            if esc:
+                esc = False
+            elif c == "\\":
+                esc = True
+            elif c == '"':
+                in_str = False
+        else:
+            if c == '"':
+                in_str = True
+            elif c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+                if depth == 0:
+                    last_complete = i + 1
+        i += 1
+
+    if last_complete == arr_start:
+        return None
+
+    # Reconstruct the envelope.
+    repaired = "{\"events\":" + blob[arr_start:last_complete] + "]}"
+    try:
+        return json.loads(repaired)
+    except Exception:
+        return None
 
 
 __all__ = ["llm_pair_diff", "is_enabled"]
