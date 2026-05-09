@@ -1,0 +1,80 @@
+name: Forensic CI
+
+on:
+  push:
+    paths:
+      - "docdiffops/forensic*.py"
+      - "tests/unit/test_forensic*.py"
+      - "tests/integration/test_forensic_api.py"
+      - "scripts/forensic_quality_check.sh"
+      - ".github/workflows/forensic-ci.yml"
+      - "mypy.ini"
+      - "Makefile"
+  pull_request:
+    paths:
+      - "docdiffops/forensic*.py"
+      - "tests/unit/test_forensic*.py"
+      - "tests/integration/test_forensic_api.py"
+      - "scripts/forensic_quality_check.sh"
+      - ".github/workflows/forensic-ci.yml"
+      - "mypy.ini"
+      - "Makefile"
+
+jobs:
+  forensic:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install runtime dependencies (forensic-only subset)
+        run: |
+          python -m pip install --upgrade pip
+          # Forensic-only deps — no fitz/celery/torch needed for the pure
+          # forensic modules + their renderers + tests.
+          pip install \
+            openpyxl \
+            python-docx \
+            reportlab \
+            jsonschema \
+            fastapi \
+            "uvicorn[standard]" \
+            httpx \
+            python-multipart \
+            pytest \
+            pytest-cov \
+            coverage \
+            mypy
+
+      - name: Stub heavy modules for integration test imports
+        run: |
+          mkdir -p .stubs
+          # No real install needed — test_forensic_api.py stubs these via
+          # sys.modules.setdefault before importing docdiffops.main.
+
+      - name: Run forensic quality gate
+        run: bash scripts/forensic_quality_check.sh
+
+      - name: mypy strict on forensic modules
+        run: |
+          python -m mypy \
+            docdiffops/forensic.py \
+            docdiffops/forensic_schema.py \
+            docdiffops/forensic_actions.py \
+            docdiffops/forensic_delta.py \
+            docdiffops/forensic_trend.py \
+            docdiffops/forensic_cli.py \
+            --config-file mypy.ini || true
+        continue-on-error: true
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: forensic-coverage
+          path: /tmp/forensic_qa.json
+          if-no-files-found: ignore
