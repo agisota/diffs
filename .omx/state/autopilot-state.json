@@ -2,7 +2,7 @@
   "mode": "autopilot",
   "active": false,
   "current_phase": "complete",
-  "iteration": 6,
+  "iteration": 7,
   "review_cycle": 0,
   "max_iterations": 10,
   "phase_cycle": [
@@ -39,12 +39,16 @@
       "tests": "197/197 unit pass",
       "production_url": "https://diff.zed.md",
       "alembic_head": "a7d3e91b4c20",
-      "prs_merged_total": 30,
+      "prs_merged_total": 31,
       "llm_active": true,
       "llm_pair_diff_live": true,
       "model": "BATCH",
       "chunked_llm_diff": true,
-      "topic_clusters": true
+      "topic_clusters": true,
+      "fuzzy_noise_eliminated": true,
+      "topic_clusters_in_html_md": true,
+      "last_smoke_event_count": 32,
+      "last_smoke_signal_to_noise": "16 high + 14 medium + 2 low; 0 fuzzy"
     },
     "code_review": {
       "recommendation": "APPROVE",
@@ -59,5 +63,5 @@
     "clean": true
   },
   "return_to_ralplan_reason": null,
-  "completed_at": "2026-05-09T00:39:08.768791+00:00"
+  "completed_at": "2026-05-09T00:52:19.438464+00:00"
 }

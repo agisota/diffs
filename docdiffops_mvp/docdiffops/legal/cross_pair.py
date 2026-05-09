@@ -35,8 +35,36 @@ def _normalize_topic(topic: str) -> str:
     return s[:80]
 
 
-def cluster_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Group events by (status, normalized topic).
+def _topic_similarity(a: str, b: str) -> float:
+    """Token-based similarity 0..100. Falls back to simple Jaccard
+    when rapidfuzz isn't available (it always is in this project,
+    but we keep the fallback for portability)."""
+    try:
+        from rapidfuzz import fuzz
+        return float(fuzz.token_set_ratio(a, b))
+    except Exception:
+        sa = set(a.split())
+        sb = set(b.split())
+        if not sa or not sb:
+            return 0.0
+        return 100.0 * len(sa & sb) / len(sa | sb)
+
+
+def _maybe_merge(buckets: dict, status: str, normalized: str, threshold: int) -> str | None:
+    """Find an existing bucket whose normalized topic is similar enough
+    to ``normalized`` and return its key. Otherwise None."""
+    for (st, norm) in list(buckets.keys()):
+        if st != status:
+            continue
+        if norm == normalized:
+            return norm
+        if _topic_similarity(norm, normalized) >= threshold:
+            return norm
+    return None
+
+
+def cluster_events(events: list[dict[str, Any]], *, similarity_threshold: int = 78) -> list[dict[str, Any]]:
+    """Group events by (status, ~similar topic).
 
     Each cluster is a dict:
       {
@@ -66,9 +94,15 @@ def cluster_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
             topic = ((e.get("explanation_short") or "")[:60]).strip()
             if not topic:
                 continue
-        key = ((e.get("status") or "").lower(), _normalize_topic(topic))
-        if key[1] == "":
+        status_l = (e.get("status") or "").lower()
+        normalized = _normalize_topic(topic)
+        if not normalized:
             continue
+        # Fuzzy merge: find an existing bucket whose topic is similar enough.
+        merge_to = _maybe_merge(buckets, status_l, normalized, similarity_threshold)
+        if merge_to is not None:
+            normalized = merge_to
+        key = (status_l, normalized)
         b = buckets.setdefault(key, {
             "topic": topic,
             "status": key[0],

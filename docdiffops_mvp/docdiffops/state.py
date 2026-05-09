@@ -158,6 +158,28 @@ def _load_json_only(batch_id: str) -> dict[str, Any]:
                     logger.warning("could not read %s: %s", jsonl, e)
         if events:
             state["diff_events"] = events
+
+    # Surface per-pair summary artifacts (narrative + cluster info) so
+    # the web UI can display them without a separate fetch.
+    if not state.get("pair_summaries"):
+        ps_path = batch_dir(batch_id) / "reports" / "pair_summaries.json"
+        if ps_path.exists():
+            try:
+                state["pair_summaries"] = read_json(ps_path)
+            except Exception as e:
+                logger.warning("could not read pair_summaries.json: %s", e)
+
+    # Surface topic_clusters artifact.
+    if not state.get("topic_clusters"):
+        cl_path = batch_dir(batch_id) / "reports" / "topic_clusters.json"
+        if cl_path.exists():
+            try:
+                cl_payload = read_json(cl_path)
+                if isinstance(cl_payload, dict) and "clusters" in cl_payload:
+                    state["topic_clusters"] = cl_payload["clusters"]
+            except Exception as e:
+                logger.warning("could not read topic_clusters.json: %s", e)
+
     return state
 
 

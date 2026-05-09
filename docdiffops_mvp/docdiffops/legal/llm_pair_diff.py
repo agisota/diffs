@@ -410,4 +410,65 @@ def _salvage_truncated_events(blob: str) -> dict | None:
         return None
 
 
-__all__ = ["llm_pair_diff", "is_enabled"]
+_SUMMARY_SYSTEM_PROMPT = (
+    "Ты — асессор сравнения двух документов. Дай КРАТКОЕ описание главного "
+    "различия одной строкой 30-60 слов на русском языке. Ничего, кроме самой "
+    "сути. Не используй markdown. Не используй вводные фразы типа "
+    "«В этом документе», «Здесь сравнение». Сразу к делу."
+)
+
+_SUMMARY_USER_TEMPLATE = (
+    "LHS ({lhs_label}):\n{lhs}\n\n"
+    "RHS ({rhs_label}):\n{rhs}\n\n"
+    "Опиши главное различие 30-60 слов одной строкой."
+)
+
+
+def llm_pair_summary(
+    pair: dict[str, Any],
+    lhs_doc: dict[str, Any],
+    rhs_doc: dict[str, Any],
+    lhs_blocks: list[dict[str, Any]],
+    rhs_blocks: list[dict[str, Any]],
+) -> str | None:
+    """One-line executive description of the pair's main difference.
+
+    Returns ``None`` when the LLM is not available, on transport error,
+    or on empty response. Cheap (1 short call), runs alongside
+    llm_pair_diff. Result is attached to ``summary['narrative']`` for
+    display in evidence_matrix.xlsx, executive_diff, and the SPA.
+    """
+    if not is_enabled():
+        return None
+    api_key = _sem._api_key()
+    if not api_key:
+        return None
+    model = os.getenv("LLM_PAIR_DIFF_MODEL") or _sem._model()
+    char_budget = int(os.getenv("LLM_PAIR_SUMMARY_CHAR_BUDGET", "8000"))
+    per_side = char_budget // 2
+    lhs_text = _doc_summary_text(lhs_blocks, max_chars=per_side)
+    rhs_text = _doc_summary_text(rhs_blocks, max_chars=per_side)
+    if not lhs_text or not rhs_text:
+        return None
+    user = _SUMMARY_USER_TEMPLATE.format(
+        lhs_label=_doc_label(lhs_doc),
+        rhs_label=_doc_label(rhs_doc),
+        lhs=lhs_text,
+        rhs=rhs_text,
+    )
+    try:
+        raw = _sem._post_chat(
+            api_key, model, _SUMMARY_SYSTEM_PROMPT, user,
+            max_tokens=int(os.getenv("LLM_PAIR_SUMMARY_MAX_TOKENS", "200")),
+        )
+    except Exception as e:
+        logger.warning("llm_pair_summary failed for %s: %s", pair.get("pair_id"), e)
+        return None
+    if not raw:
+        return None
+    # Strip leading bullets / quotes / markdown the model often adds.
+    line = raw.strip().splitlines()[0] if raw.strip().splitlines() else raw.strip()
+    return line.strip().lstrip("•-—–*>").strip().strip('"').strip("«»")[:500]
+
+
+__all__ = ["llm_pair_diff", "llm_pair_summary", "is_enabled"]
