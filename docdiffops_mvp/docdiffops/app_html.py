@@ -718,12 +718,17 @@ function renderPairs(s) {
   const docs = (s.documents || []).reduce((m, d) => (m[d.doc_id] = d, m), {});
   const list = document.getElementById('pairs-list');
   list.innerHTML = '';
+  // Pair summaries are stored separately as artifacts; build a quick
+  // lookup so we can attach narrative text to each pair card.
+  const summariesByPair = (s.pair_summaries || []).reduce((m, x) => (m[x.pair_id] = x, m), {});
   const pairs = s.pair_runs || s.pairs || [];
   if (!pairs.length) { list.innerHTML = "<div class='empty'>(пока нет пар)</div>"; return; }
   const arts = (s.artifacts || []);
   for (const p of pairs) {
     const lhs = docs[p.lhs_doc_id] || {};
     const rhs = docs[p.rhs_doc_id] || {};
+    // Attach narrative from pair_summaries lookup (best-effort).
+    p.narrative = p.narrative || (summariesByPair[p.pair_id] || {}).narrative;
     const card = document.createElement('div');
     card.className = 'pair-card';
     const ev = (s.diff_events || []).filter(e => e.pair_id === p.pair_id);
@@ -745,6 +750,7 @@ function renderPairs(s) {
         </div>
         <div class='muted mono' style='font-size:12px'>${ev.length} events</div>
       </div>
+      ${p.narrative ? `<div style='margin-top:8px;padding:10px 12px;background:rgba(76,195,255,0.05);border-left:3px solid var(--blue);border-radius:4px;font-size:13px;line-height:1.5'>${escapeHtml(p.narrative)}</div>` : ''}
       <div class='stats'>
         <div>same <span>${same}</span></div>
         <div>partial <span>${partial}</span></div>

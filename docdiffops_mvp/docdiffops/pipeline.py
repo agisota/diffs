@@ -17,6 +17,7 @@ from .legal import (
     llm_pair_diff_enabled,
 )
 from .legal.cross_pair import cluster_events
+from .legal.llm_pair_diff import llm_pair_summary
 from .executive import render_executive_md
 from .extract import extract_any
 from .normalize import convert_to_canonical_pdf
@@ -254,7 +255,16 @@ def run_all_pairs(
                 summary["llm_pair_diff_events"] = len(llm_events)
                 summary["events_total"] = len(events)
                 _refresh_status_counts(summary, events)
-            elif not keep_fuzzy:
+            # Per-pair narrative (one-line LLM summary), best-effort.
+            if os.getenv("LLM_PAIR_SUMMARY_ENABLED", "true").lower() != "false":
+                try:
+                    narrative = llm_pair_summary(pair, lhs_doc, rhs_doc, lhs_blocks, rhs_blocks)
+                    if narrative:
+                        summary["narrative"] = narrative
+                except Exception as e:
+                    logger.warning("llm_pair_summary failed for %s: %s", pair.get("pair_id"), e)
+
+            if not llm_events and not keep_fuzzy:
                 # Drop fuzzy noise; emit one placeholder event flagging
                 # the pair for manual review so the absence is visible.
                 placeholder = {
