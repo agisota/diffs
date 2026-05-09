@@ -461,11 +461,29 @@ document.getElementById('btn-create').addEventListener('click', async () => {
       xhr.send(fd);
     });
 
+    // Async path: large corpora take 30+ minutes — sync=true would time out
+    // at the reverse proxy. Kick off via Celery worker and poll /tasks/{id}.
     progLabel.textContent = 'Запуск pipeline…'; progFill.style.width = '75%';
-    const result = await fetch(BASE + '/batches/' + batchId + '/run?profile=fast&sync=true', { method: 'POST' }).then(r => r.json());
+    const kicked = await fetch(BASE + '/batches/' + batchId + '/run?profile=fast', { method: 'POST' }).then(r => r.json());
+    const taskId = kicked.task_id;
+    if (!taskId) throw new Error('worker did not accept task: ' + JSON.stringify(kicked));
+
+    progLabel.textContent = 'Pipeline в работе (это может занять 5–60 минут на больших корпусах)…';
+    progFill.style.width = '80%';
+    let pollDelay = 2000;  // start at 2s, back off to 15s
+    let result = null;
+    while (true) {
+      await new Promise(r => setTimeout(r, pollDelay));
+      const t = await fetch(BASE + '/tasks/' + taskId).then(r => r.json());
+      if (t.state === 'SUCCESS') { result = t.result || {}; break; }
+      if (t.state === 'FAILURE') throw new Error('pipeline failed: ' + (t.result || 'no detail'));
+      pollDelay = Math.min(15000, pollDelay + 1000);
+    }
     progFill.style.width = '100%';
-    progLabel.textContent = `Готово: ${result.metrics?.events ?? 0} событий за ${result.metrics?.time_to_report_sec ?? '?'}s`;
-    toast(`Batch ${batchId.slice(-8)} готов: ${result.metrics?.events ?? 0} событий`, 'success');
+    const events = result.events ?? 0;
+    const dur = result.time_to_report_sec ?? '?';
+    progLabel.textContent = `Готово: ${events} событий за ${dur}s`;
+    toast(`Batch ${batchId.slice(-8)} готов: ${events} событий`, 'success');
     staged.length = 0; renderStaged();
     document.getElementById('batch-title').value = '';
     setTimeout(() => { progBox.style.display = 'none'; openBatch(batchId); }, 800);
