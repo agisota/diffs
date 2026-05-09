@@ -221,16 +221,24 @@ def llm_pair_diff(
 
     lhs_label = _doc_label(lhs_doc)
     rhs_label = _doc_label(rhs_doc)
-    raw_items: list[dict[str, Any]] = []
-    for i in range(n_pairs):
-        seg_items = _call_llm_for_segment(
+    # Run per-segment LLM calls in parallel — they're network-bound and
+    # independent. With 4 segments × ~5s each, this drops a pair's diff
+    # time from ~20s to ~6s.
+    from concurrent.futures import ThreadPoolExecutor
+
+    def _one(i: int) -> tuple[int, list[dict[str, Any]]]:
+        return i, _call_llm_for_segment(
             api_key, model, max_tokens, lhs_label, rhs_label,
             lhs_segments[i], rhs_segments[i], pair_id,
         )
-        for it in seg_items:
-            if isinstance(it, dict):
-                it["_segment_index"] = i
-                raw_items.append(it)
+
+    raw_items: list[dict[str, Any]] = []
+    with ThreadPoolExecutor(max_workers=min(n_pairs, 4)) as pool:
+        for i, seg_items in pool.map(_one, range(n_pairs)):
+            for it in seg_items:
+                if isinstance(it, dict):
+                    it["_segment_index"] = i
+                    raw_items.append(it)
 
     if not raw_items:
         return []
@@ -456,19 +464,28 @@ def llm_pair_summary(
         lhs=lhs_text,
         rhs=rhs_text,
     )
-    try:
-        raw = _sem._post_chat(
-            api_key, model, _SUMMARY_SYSTEM_PROMPT, user,
-            max_tokens=int(os.getenv("LLM_PAIR_SUMMARY_MAX_TOKENS", "200")),
-        )
-    except Exception as e:
-        logger.warning("llm_pair_summary failed for %s: %s", pair.get("pair_id"), e)
+    raw = _try_summary_call(api_key, model, user, pair.get("pair_id") or "?")
+    # Retry with a different model on empty/short response — api.zed.md
+    # models are sometimes flaky for short tasks.
+    if not raw or len(raw.strip()) < 10:
+        fallback_model = os.getenv("LLM_PAIR_SUMMARY_FALLBACK_MODEL", "cheap")
+        if fallback_model and fallback_model != model:
+            raw = _try_summary_call(api_key, fallback_model, user, pair.get("pair_id") or "?")
+    if not raw or len(raw.strip()) < 10:
         return None
-    if not raw:
-        return None
-    # Strip leading bullets / quotes / markdown the model often adds.
     line = raw.strip().splitlines()[0] if raw.strip().splitlines() else raw.strip()
     return line.strip().lstrip("•-—–*>").strip().strip('"').strip("«»")[:500]
+
+
+def _try_summary_call(api_key: str, model: str, user: str, pair_id: str) -> str:
+    try:
+        return _sem._post_chat(
+            api_key, model, _SUMMARY_SYSTEM_PROMPT, user,
+            max_tokens=int(os.getenv("LLM_PAIR_SUMMARY_MAX_TOKENS", "300")),
+        ) or ""
+    except Exception as e:
+        logger.warning("llm_pair_summary[%s] failed for %s: %s", model, pair_id, e)
+        return ""
 
 
 __all__ = ["llm_pair_diff", "llm_pair_summary", "is_enabled"]

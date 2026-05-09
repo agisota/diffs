@@ -740,7 +740,7 @@ function renderPairs(s) {
     const pairArts = arts.filter(a => (a.path || '').includes(p.pair_id));
     card.innerHTML = `
       <div class='head'>
-        <div>
+        <div style='flex:1;min-width:0'>
           <div class='pair-id'>${escapeHtml(p.pair_id || '')}</div>
           <div class='docs'>
             <span class='rank-${lhs.source_rank || 3}'>${escapeHtml(lhs.filename || lhs.doc_id || p.lhs_doc_id || '?')}</span>
@@ -748,7 +748,12 @@ function renderPairs(s) {
             <span class='rank-${rhs.source_rank || 3}'>${escapeHtml(rhs.filename || rhs.doc_id || p.rhs_doc_id || '?')}</span>
           </div>
         </div>
-        <div class='muted mono' style='font-size:12px'>${ev.length} events</div>
+        <div style='text-align:right'>
+          ${(summariesByPair[p.pair_id] || {}).score_pct != null ? `
+            <div style='font-size:24px;font-weight:600;line-height:1;color:${(summariesByPair[p.pair_id].score_pct >= 70 ? 'var(--green)' : summariesByPair[p.pair_id].score_pct >= 40 ? 'var(--amber)' : 'var(--red)')}'>${summariesByPair[p.pair_id].score_pct}</div>
+            <div class='muted' style='font-size:10px;text-transform:uppercase;letter-spacing:0.06em'>${escapeHtml((summariesByPair[p.pair_id].score_band||''))}</div>
+          ` : `<div class='muted mono' style='font-size:12px'>${ev.length} events</div>`}
+        </div>
       </div>
       ${p.narrative ? `<div style='margin-top:8px;padding:10px 12px;background:rgba(76,195,255,0.05);border-left:3px solid var(--blue);border-radius:4px;font-size:13px;line-height:1.5'>${escapeHtml(p.narrative)}</div>` : ''}
       <div class='stats'>

@@ -117,9 +117,21 @@ def render_evidence_matrix(out_path: Path, state: dict[str, Any], all_events: li
     autofit(ws)
 
     ws = wb.create_sheet("02_pair_matrix")
-    ws.append(["pair_id", "lhs_doc_id", "rhs_doc_id", "events_total", "same_count", "partial_count", "added_count", "deleted_count", "high_count", "review_required_count"])
+    ws.append([
+        "pair_id", "lhs_doc_id", "rhs_doc_id",
+        "score_pct", "score_band", "narrative",
+        "events_total", "same_count", "partial_count",
+        "added_count", "deleted_count", "high_count",
+        "review_required_count",
+    ])
     for s in pair_summaries:
-        ws.append([s.get(k) for k in ["pair_id", "lhs_doc_id", "rhs_doc_id", "events_total", "same_count", "partial_count", "added_count", "deleted_count", "high_count", "review_required_count"]])
+        ws.append([
+            s.get("pair_id"), s.get("lhs_doc_id"), s.get("rhs_doc_id"),
+            s.get("score_pct"), s.get("score_band"), s.get("narrative"),
+            s.get("events_total"), s.get("same_count"), s.get("partial_count"),
+            s.get("added_count"), s.get("deleted_count"), s.get("high_count"),
+            s.get("review_required_count"),
+        ])
     style_header(ws)
     autofit(ws)
 
