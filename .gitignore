@@ -1,5 +1,9 @@
 # oh-my-claudecode internal state
 .omc/
+.omx/
+
+# Claude Code project settings
+.claude/
 
 # Python
 __pycache__/
@@ -14,12 +18,18 @@ env/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.coverage
 
 # Runtime / data dirs (created by DocDiffOps pipeline)
 data/
 batches/
 .cache/
 *.log
+
+# Per-iteration migration outputs (artifacts, not source).
+# v7/v10 are derived; v8/v9 are kept as canonical reference bundles.
+migration_v7_evidence/
+migration_v10_out/
 
 # Secrets / env
 .env
