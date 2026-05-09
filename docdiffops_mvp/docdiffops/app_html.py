@@ -281,6 +281,7 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
       <button class="tab-line" data-detail-tab="pairs">Пары</button>
       <button class="tab-line" data-detail-tab="docs">Документы</button>
       <button class="tab-line" data-detail-tab="artifacts">Артефакты</button>
+      <button class="tab-line" data-detail-tab="topics">Topics</button>
       <button class="tab-line" data-detail-tab="audit">Audit</button>
       <span style="margin-left:auto;align-self:center;display:flex;gap:6px;align-items:center">
         <span class="muted" style="font-size:12px">Anchor:</span>
@@ -313,6 +314,10 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
 
     <div id="dtab-artifacts" class="dtab" hidden>
       <div id="arts-list" class="arts-list"></div>
+    </div>
+
+    <div id="dtab-topics" class="dtab" hidden>
+      <div id="topics-list"></div>
     </div>
 
     <div id="dtab-audit" class="dtab" hidden>
@@ -517,6 +522,7 @@ async function openBatch(batchId) {
     renderArtifacts(s);
     renderAnchorSelector(s);
     loadAudit(batchId);
+    loadTopics(batchId);
     location.hash = '#batch/' + batchId;
   } catch (e) {
     document.getElementById('detail-kpis').innerHTML = `<div class='empty'>Ошибка: ${escapeHtml(e.message)}</div>`;
@@ -811,6 +817,49 @@ document.getElementById('btn-rerender').addEventListener('click', async () => {
     btn.disabled = false; btn.textContent = '↻ Rerender';
   }
 });
+
+// -------- topic clusters (cross-pair dedup) --------
+async function loadTopics(batchId) {
+  const list = document.getElementById('topics-list');
+  list.innerHTML = "<div class='empty'><span class='spinner'></span></div>";
+  try {
+    const r = await fetch(BASE + '/batches/' + batchId + '/clusters').then(r => r.json());
+    const clusters = r.clusters || [];
+    if (!clusters.length) { list.innerHTML = "<div class='empty'>(нет тематических кластеров — запустите batch с LLM_PAIR_DIFF_ENABLED=true)</div>"; return; }
+    list.innerHTML = '<div class="muted" style="font-size:12px;margin-bottom:12px">' +
+      clusters.length + ' кластеров (один тезис который встречается в N парах = 1 кластер)</div>' +
+      clusters.map(c => `
+        <div class='pair-card' style='margin-bottom:10px'>
+          <div class='head'>
+            <div style='flex:1;min-width:0'>
+              <div class='docs' style='word-break:break-word'>
+                <span class='chip chip-${escapeHtml(c.status||'low')}'>${escapeHtml(c.status||'?')}</span>
+                <span class='chip chip-${escapeHtml(c.severity||'low')}'>${escapeHtml(c.severity||'low')}</span>
+                <span style='margin-left:6px'>${escapeHtml(c.topic||'(no topic)')}</span>
+              </div>
+              <div class='pair-id' style='margin-top:4px'>${escapeHtml(c.cluster_id||'')}</div>
+            </div>
+            <div class='muted mono' style='font-size:12px;text-align:right'>
+              <div>${c.count} ev</div>
+              <div>${(c.pair_ids||[]).length} pair${(c.pair_ids||[]).length===1?'':'s'}</div>
+            </div>
+          </div>
+          ${(c.explanations||[]).length ? '<div style="margin-top:6px;font-size:13px;color:var(--mute);font-style:italic">' +
+            (c.explanations||[]).map(x => '✎ '+escapeHtml(x)).join('<br>') + '</div>' : ''}
+          <div style='margin-top:6px;display:flex;gap:6px;flex-wrap:wrap'>
+            ${(c.pair_ids||[]).map(pid => `<button class='pill-link' data-pid='${escapeHtml(pid)}'>${escapeHtml(pid.slice(-12))}</button>`).join('')}
+          </div>
+        </div>
+      `).join('');
+    list.querySelectorAll('button[data-pid]').forEach(b => b.addEventListener('click', () => {
+      document.getElementById('evt-pair').value = b.dataset.pid;
+      document.querySelector('.tab-line[data-detail-tab="events"]').click();
+      applyEventsFilter();
+    }));
+  } catch (e) {
+    list.innerHTML = `<div class='empty'>Topics unavailable: ${escapeHtml(e.message)}</div>`;
+  }
+}
 
 // -------- audit log --------
 async function loadAudit(batchId) {

@@ -87,6 +87,42 @@ def _doc_summary_text(blocks: list[dict[str, Any]], *, max_chars: int) -> str:
     return "\n".join(out)
 
 
+def _split_into_segments(blocks: list[dict[str, Any]], *, segment_chars: int) -> list[str]:
+    """Group blocks into segments of approximately ``segment_chars`` each.
+
+    Blocks are kept atomic (a single block doesn't get split mid-sentence)
+    unless an individual block exceeds the budget, in which case it's
+    truncated. Returns the list of segments — never empty if any blocks
+    have non-empty text.
+    """
+    segments: list[str] = []
+    current: list[str] = []
+    used = 0
+    for b in blocks or []:
+        t = (b.get("text") or "").strip()
+        if not t:
+            continue
+        page = b.get("page_no")
+        prefix = f"[p.{page}] " if page else ""
+        piece = prefix + t
+        if len(piece) > segment_chars * 1.5:
+            # An over-long single block — split it on its own.
+            if current:
+                segments.append("\n".join(current))
+                current, used = [], 0
+            for i in range(0, len(piece), segment_chars):
+                segments.append(piece[i : i + segment_chars])
+            continue
+        if used + len(piece) + 1 > segment_chars and current:
+            segments.append("\n".join(current))
+            current, used = [], 0
+        current.append(piece)
+        used += len(piece) + 1
+    if current:
+        segments.append("\n".join(current))
+    return segments
+
+
 def _doc_label(doc: dict[str, Any]) -> str:
     rank = doc.get("source_rank") or "?"
     dt = doc.get("doc_type") or "OTHER"
@@ -99,48 +135,27 @@ def _event_id(pair_id: str, idx: int, topic: str) -> str:
     return "evt_llm_" + h[:16]
 
 
-def llm_pair_diff(
-    pair: dict[str, Any],
-    lhs_doc: dict[str, Any],
-    rhs_doc: dict[str, Any],
-    lhs_blocks: list[dict[str, Any]],
-    rhs_blocks: list[dict[str, Any]],
+def _call_llm_for_segment(
+    api_key: str,
+    model: str,
+    max_tokens: int,
+    lhs_label: str,
+    rhs_label: str,
+    lhs_text: str,
+    rhs_text: str,
+    pair_id: str,
 ) -> list[dict[str, Any]]:
-    """Return semantic diff events for ``pair`` via a single LLM call.
-
-    Returns ``[]`` when disabled, on transport errors, or on parse
-    failure. Never raises into the caller.
-    """
-    if not is_enabled():
-        return []
-    api_key = _sem._api_key()
-    if not api_key:
-        return []
-    model = os.getenv("LLM_PAIR_DIFF_MODEL") or _sem._model()
-    char_budget = int(os.getenv("LLM_PAIR_DIFF_CHAR_BUDGET", "12000"))
-    per_side = char_budget // 2
-
-    lhs_text = _doc_summary_text(lhs_blocks, max_chars=per_side)
-    rhs_text = _doc_summary_text(rhs_blocks, max_chars=per_side)
-    if not lhs_text or not rhs_text:
-        return []
-
+    """One LLM call → list of raw event dicts (validated upstream)."""
     user = _USER_TEMPLATE.format(
-        lhs_label=_doc_label(lhs_doc),
-        rhs_label=_doc_label(rhs_doc),
-        lhs=lhs_text,
-        rhs=rhs_text,
+        lhs_label=lhs_label, rhs_label=rhs_label, lhs=lhs_text, rhs=rhs_text,
     )
-
-    max_tokens = int(os.getenv("LLM_PAIR_DIFF_MAX_TOKENS", "4000"))
     try:
         raw = _sem._post_chat(
             api_key, model, _SYSTEM_PROMPT, user,
             max_tokens=max_tokens, json_object=True,
         )
     except Exception as e:
-        logger.warning("llm_pair_diff HTTP failed for %s: %s", pair.get("pair_id"), e)
-        # Some providers reject response_format; retry without it.
+        logger.warning("llm_pair_diff HTTP failed for %s: %s", pair_id, e)
         try:
             raw = _sem._post_chat(
                 api_key, model, _SYSTEM_PROMPT, user,
@@ -149,16 +164,88 @@ def llm_pair_diff(
         except Exception as e2:
             logger.warning("llm_pair_diff retry failed: %s", e2)
             return []
-
     items = _parse_json_array(raw)
-    # When response is a JSON object with "events" key, unwrap it.
     if len(items) == 1 and isinstance(items[0], dict) and "events" in items[0] and isinstance(items[0]["events"], list):
         items = items[0]["events"]
     if not items:
-        logger.warning("llm_pair_diff parse failed for %s; raw[0:200]=%r", pair.get("pair_id"), raw[:200])
+        logger.warning("llm_pair_diff parse failed for %s; raw[0:200]=%r", pair_id, raw[:200])
+    return items
+
+
+def llm_pair_diff(
+    pair: dict[str, Any],
+    lhs_doc: dict[str, Any],
+    rhs_doc: dict[str, Any],
+    lhs_blocks: list[dict[str, Any]],
+    rhs_blocks: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Return semantic diff events for ``pair``.
+
+    Strategy:
+    - Split each side into ~3-4KB segments.
+    - For each pair of segments at the same position, run one LLM call.
+    - Aggregate events with deduplication on (status, topic).
+
+    The chunked approach beats the single-call approach on big docs:
+    it never blows the token budget and lets long docs surface ~20-30
+    curated events instead of getting truncated to 0.
+
+    Returns ``[]`` when disabled or on universal failure.
+    """
+    if not is_enabled():
+        return []
+    api_key = _sem._api_key()
+    if not api_key:
+        return []
+    model = os.getenv("LLM_PAIR_DIFF_MODEL") or _sem._model()
+    pair_id = pair.get("pair_id") or "?"
+
+    # Per-segment budget — leave room for the system prompt and JSON
+    # envelope. 3500 chars per side per call comfortably fits a 4K-token
+    # response on most providers.
+    segment_chars = int(os.getenv("LLM_PAIR_DIFF_SEGMENT_CHARS", "3500"))
+    max_tokens = int(os.getenv("LLM_PAIR_DIFF_MAX_TOKENS", "4000"))
+    max_segments = int(os.getenv("LLM_PAIR_DIFF_MAX_SEGMENTS", "4"))
+
+    lhs_segments = _split_into_segments(lhs_blocks, segment_chars=segment_chars)
+    rhs_segments = _split_into_segments(rhs_blocks, segment_chars=segment_chars)
+    if not lhs_segments or not rhs_segments:
         return []
 
-    pair_id = pair.get("pair_id") or "?"
+    # Position-paired segments (segment 1 of LHS ↔ segment 1 of RHS, etc.).
+    # When the doc lengths differ we still run zip-style pairs and drop
+    # the rest — better than O(N²) cost. Bounded by max_segments.
+    n_pairs = min(len(lhs_segments), len(rhs_segments), max_segments)
+    if n_pairs == 0:
+        return []
+
+    lhs_label = _doc_label(lhs_doc)
+    rhs_label = _doc_label(rhs_doc)
+    raw_items: list[dict[str, Any]] = []
+    for i in range(n_pairs):
+        seg_items = _call_llm_for_segment(
+            api_key, model, max_tokens, lhs_label, rhs_label,
+            lhs_segments[i], rhs_segments[i], pair_id,
+        )
+        for it in seg_items:
+            if isinstance(it, dict):
+                it["_segment_index"] = i
+                raw_items.append(it)
+
+    if not raw_items:
+        return []
+
+    # Dedup events whose (status, normalized topic) collide — large docs
+    # often surface the same difference in two adjacent segments.
+    seen: dict[tuple[str, str], dict[str, Any]] = {}
+    for it in raw_items:
+        topic = (it.get("topic") or "").strip().lower()
+        topic_key = re.sub(r"[\s\-—–.,;:!?]+", " ", topic)[:80]
+        key = ((it.get("status") or "").lower(), topic_key)
+        if key not in seen:
+            seen[key] = it
+    items = list(seen.values())
+
     out: list[dict[str, Any]] = []
     for i, it in enumerate(items[:30]):  # safety cap
         if not isinstance(it, dict):

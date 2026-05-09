@@ -16,6 +16,7 @@ from .legal import (
     llm_pair_diff,
     llm_pair_diff_enabled,
 )
+from .legal.cross_pair import cluster_events
 from .executive import render_executive_md
 from .extract import extract_any
 from .normalize import convert_to_canonical_pdf
@@ -403,6 +404,16 @@ def render_global_reports(
         add_artifact(state, "full_html", html_path, "Full HTML report", repo=repo)
     except Exception as e:
         logger.warning("render_html_report failed: %s", e)
+
+    # Cross-pair topic clusters: group same status+topic across all pairs.
+    try:
+        clusters = cluster_events(all_events)
+        cl_path = base / "reports" / "topic_clusters.json"
+        write_json(cl_path, {"clusters": clusters})
+        add_artifact(state, "topic_clusters", cl_path, "Topic clusters JSON", repo=repo)
+        state["topic_clusters"] = clusters
+    except Exception as e:
+        logger.warning("cluster_events failed: %s", e)
 
     # Machine-readable global exports.
     write_jsonl(base / "reports" / "diff_events_all.jsonl", all_events)
