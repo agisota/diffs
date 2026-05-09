@@ -264,8 +264,10 @@ def _merge_db_with_json(db_state: dict[str, Any], json_state: dict[str, Any]) ->
     ``extracted_json``, ``block_count``).
     """
     merged = dict(db_state)
-    # Restore JSON-only top-level fields.
-    for k in ("config", "runs", "metrics"):
+    # Restore JSON-only top-level fields. ``pair_summaries`` and
+    # ``topic_clusters`` are post-pipeline artifacts that the DB
+    # schema doesn't track but that the SPA needs in one fetch.
+    for k in ("config", "runs", "metrics", "pair_summaries", "topic_clusters"):
         if k in json_state:
             merged[k] = json_state[k]
     # If JSON has MORE entries than the DB (dual-write partial failure
