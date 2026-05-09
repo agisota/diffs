@@ -1,0 +1,17 @@
+{
+  "generated_at": "2026-05-09 04:29:16Z",
+  "schema": "v8.2",
+  "added_artifacts": {
+    "raci_csv": "data/17_raci_matrix.csv",
+    "supplementary_xlsx_with_heatmap_and_raci": "docs/Несоответствия_и_действия.xlsx",
+    "cover_pdf": "docs/Forensic_v8_cover.pdf",
+    "offline_cli_module": "docdiffops.forensic_cli"
+  },
+  "visuals": [
+    "docs/visuals/cover_summary.png",
+    "docs/visuals/heatmap_doc_x_doc.png",
+    "docs/visuals/rank_pair_bar.png",
+    "docs/visuals/status_pie.png",
+    "docs/visuals/topic_bar.png"
+  ]
+}

@@ -1,0 +1,64 @@
+# Fallback downloads round 2
+
+Generated: 2026-05-09 06:04:04 +0300
+
+- downloaded: ПП РФ 2573 Garant full current
+  - url: https://base.garant.ru/406067851/
+  - local: `/Users/marklindgreen/Downloads/migration_v7_evidence/06_исходные_НПА_и_forensic_snapshot/downloaded_sources/external_fallbacks_round2/001_ПП_РФ_2573_Garant_full_current_base.garant.ru_406067851.html`
+  - sha256: `89c71973a4127119720fcbed8c40e437e447aac8342252ddd2c9c3c450c5e8ba`
+  - note: bytes=97753
+- downloaded: ПП РФ 2573 Consultant direct body
+  - url: https://www.consultant.ru/document/cons_doc_LAW_436862/92d969e26a4326c5d02fa79b8f9cf4994ee5633b/
+  - local: `/Users/marklindgreen/Downloads/migration_v7_evidence/06_исходные_НПА_и_forensic_snapshot/downloaded_sources/external_fallbacks_round2/002_ПП_РФ_2573_Consultant_direct_body_www.consultant.ru_document_cons_doc_LAW_436862_92d969e26a4326c5d02fa79b8f9cf4994ee5633b.html`
+  - sha256: `7574522986f27877b8f872c3e52b843c9e41c229fca9c9e470619dc2e9720490`
+  - note: bytes=39749
+- downloaded: ПП РФ 2573 Kontur current
+  - url: https://normativ.kontur.ru/document?documentId=456188&moduleId=1
+  - local: `/Users/marklindgreen/Downloads/migration_v7_evidence/06_исходные_НПА_и_forensic_snapshot/downloaded_sources/external_fallbacks_round2/003_ПП_РФ_2573_Kontur_current_normativ.kontur.ru_document.html`
+  - sha256: `537f33cbd1406049ff484a475d46c946a267bffe1c80fabd450dd8894e4742c9`
+  - note: bytes=62624
+- downloaded: ПП РФ 1375 amendment to 2573 Kontur
+  - url: https://normativ.kontur.ru/document?documentId=454504&moduleId=1
+  - local: `/Users/marklindgreen/Downloads/migration_v7_evidence/06_исходные_НПА_и_forensic_snapshot/downloaded_sources/external_fallbacks_round2/004_ПП_РФ_1375_amendment_to_2573_Kontur_normativ.kontur.ru_document.html`
+  - sha256: `bee4980017194a22e9d7a73ff933b2dff36b681ec7fb6508ff32de4959988206`
+  - note: bytes=52172
+- downloaded: ПП РФ 1375 amendment to 2573 Garant
+  - url: https://base.garant.ru/407572394/
+  - local: `/Users/marklindgreen/Downloads/migration_v7_evidence/06_исходные_НПА_и_forensic_snapshot/downloaded_sources/external_fallbacks_round2/005_ПП_РФ_1375_amendment_to_2573_Garant_base.garant.ru_407572394.html`
+  - sha256: `d65464ef4f10162c8aa05a3c509027c89aab1149259487a9132e0aee88d68bf1`
+  - note: bytes=84074
+- blocked_or_challenge: ПП РФ 1375 amendment to 2573 Garant Prime
+  - url: https://www.garant.ru/products/ipo/prime/doc/407472394/
+  - local: `/Users/marklindgreen/Downloads/migration_v7_evidence/06_исходные_НПА_и_forensic_snapshot/downloaded_sources/external_fallbacks_round2/006_ПП_РФ_1375_amendment_to_2573_Garant_Prime_www.garant.ru_products_ipo_prime_doc_407472394.html`
+  - sha256: `236e1f7adc9a1146ce1059a532d313bbaec5b2fc285e9640e83e42205b316e92`
+  - note: bytes=898
+- downloaded: ПП РФ 1375 amendment to 2573 Consultant body
+  - url: https://www.consultant.ru/document/cons_doc_LAW_455494/92d969e26a4326c5d02fa79b8f9cf4994ee5633b/
+  - local: `/Users/marklindgreen/Downloads/migration_v7_evidence/06_исходные_НПА_и_forensic_snapshot/downloaded_sources/external_fallbacks_round2/007_ПП_РФ_1375_amendment_to_2573_Consultant_body_www.consultant.ru_document_cons_doc_LAW_455494_92d969e26a4326c5d02fa79b8f9cf4994ee5633b.html`
+  - sha256: `ed095e9fd22d075cb0dff1e14b6127c9cab648ad1d7486ce7c73edcfe310791a`
+  - note: bytes=34639
+- downloaded: ПП РФ 1562 SudAct full
+  - url: https://sudact.ru/law/postanovlenie-pravitelstva-rf-ot-08102025-n-1562/
+  - local: `/Users/marklindgreen/Downloads/migration_v7_evidence/06_исходные_НПА_и_forensic_snapshot/downloaded_sources/external_fallbacks_round2/008_ПП_РФ_1562_SudAct_full_sudact.ru_law_postanovlenie-pravitelstva-rf-ot-08102025-n-1562.html`
+  - sha256: `0da29ad9ff64f7f868a1d4eb0438070580974655456abe5c55b5672664f76f12`
+  - note: bytes=37252
+- blocked_or_challenge: ПП РФ 1562 Garant hotlaw
+  - url: https://www.garant.ru/hotlaw/federal/1886429/
+  - local: `/Users/marklindgreen/Downloads/migration_v7_evidence/06_исходные_НПА_и_forensic_snapshot/downloaded_sources/external_fallbacks_round2/009_ПП_РФ_1562_Garant_hotlaw_www.garant.ru_hotlaw_federal_1886429.html`
+  - sha256: `236e1f7adc9a1146ce1059a532d313bbaec5b2fc285e9640e83e42205b316e92`
+  - note: bytes=898
+- blocked_or_challenge: ПП РФ 1562 Garant Prime
+  - url: https://www.garant.ru/products/ipo/prime/doc/412732447/
+  - local: `/Users/marklindgreen/Downloads/migration_v7_evidence/06_исходные_НПА_и_forensic_snapshot/downloaded_sources/external_fallbacks_round2/010_ПП_РФ_1562_Garant_Prime_www.garant.ru_products_ipo_prime_doc_412732447.html`
+  - sha256: `236e1f7adc9a1146ce1059a532d313bbaec5b2fc285e9640e83e42205b316e92`
+  - note: bytes=898
+- downloaded: ПП РФ 1510 Meganorm red 08.10.2025
+  - url: https://meganorm.ru/mega_doc/dop1/82/federalnyy_zakon_ot_15_08_1996_N_114-fz_red_ot_23_07_2025_o/0/postanovlenie_pravitelstva_rf_ot_07_11_2024_N_1510_red_ot_08.html
+  - local: `/Users/marklindgreen/Downloads/migration_v7_evidence/06_исходные_НПА_и_forensic_snapshot/downloaded_sources/external_fallbacks_round2/011_ПП_РФ_1510_Meganorm_red_08.10.2025_meganorm.ru_mega_doc_dop1_82_federalnyy_zakon_ot_15_08_1996_N_114-fz_red_ot_23_07_2025_o_0_postanovlenie_pravitelstva_rf_ot_07_11_2024_N_1510_red_ot_0.html`
+  - sha256: `c2c44fd35ebb4ffc07201f72d10b2565490f1ab874c202557b7c8ec4ea43c65d`
+  - note: bytes=267803
+- blocked_or_challenge: Минэк 2573 implementation letter Garant Prime
+  - url: https://www.garant.ru/products/ipo/prime/doc/407766139/
+  - local: `/Users/marklindgreen/Downloads/migration_v7_evidence/06_исходные_НПА_и_forensic_snapshot/downloaded_sources/external_fallbacks_round2/012_Минэк_2573_implementation_letter_Garant_Prime_www.garant.ru_products_ipo_prime_doc_407766139.html`
+  - sha256: `236e1f7adc9a1146ce1059a532d313bbaec5b2fc285e9640e83e42205b316e92`
+  - note: bytes=898

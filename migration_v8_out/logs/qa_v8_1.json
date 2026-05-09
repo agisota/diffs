@@ -1,0 +1,16 @@
+{
+  "generated_at": "2026-05-09 04:18:05Z",
+  "v8_1_artifacts": {
+    "actions_count": 10,
+    "brochure_redgreen_rows": 6,
+    "klerk_npa_links": 6,
+    "eaeu_split_rows": 3,
+    "amendment_chain_rows": 5,
+    "provenance_actions": 4,
+    "top_priority_pairs": 20
+  },
+  "coverage": {
+    "FA-01..FA-10": "10 actions cover все 3 финальных противоречия (C-01..C-03), все 3 source gaps (U-01..U-03), все 3 defects (D-001..D-003), и 4 цепочки поправок (ruID, базовая рамка, КоАП, НК)",
+    "fixes_proposed_per_action": "1-6 конкретных правок с координатами"
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "generated_at": "2026-05-09 03:56:20Z",
+  "control_numbers_expected": {
+    "documents": 26,
+    "pairs": 325,
+    "events": 281,
+    "manual_reviews": 183,
+    "final_contradictions": 3,
+    "uncovered_theses": 3,
+    "defect_log": 3,
+    "fallback_sources": 71
+  },
+  "control_numbers_actual": {
+    "documents": 26,
+    "pairs": 325,
+    "events": 281,
+    "manual_reviews": 183,
+    "final_contradictions": 3,
+    "uncovered_theses": 3,
+    "defect_log": 3
+  },
+  "status_distribution_pairs": {
+    "manual_review": 61,
+    "not_comparable": 168,
+    "partial_overlap": 68,
+    "match": 26,
+    "contradiction": 2
+  },
+  "rank_pair_distribution": {
+    "3↔3": 6,
+    "3↔1": 75,
+    "3↔2": 8,
+    "1↔1": 190,
+    "1↔3": 5,
+    "1↔2": 17,
+    "2↔1": 23,
+    "2↔2": 1
+  },
+  "topic_event_distribution": {
+    "ruID, цифровой профиль, биометрия": 94,
+    "Миграционный учёт и фактическое нахождение": 52,
+    "Патенты, НДФЛ, госпошлины": 64,
+    "Режим высылки, реестр контролируемых лиц": 34,
+    "Образовательная миграция": 24,
+    "Адаптация и интеграция": 22,
+    "ВНЖ инвестора (ПП №2573)": 20,
+    "Эксперимент 121-ФЗ Москва/МО, 90 дней": 16,
+    "ВЦИОМ-claims (ужесточение, образование, интеллект)": 4,
+    "Концепции и планы (D04 D05 D07 D08)": 22,
+    "ЕАЭС: трудовая миграция": 10,
+    "КоАП: ответственность": 14,
+    "Изменения 2024–2026 (260/270/271/281/121/1562/468)": 12,
+    "Базовая нормативная рамка (114/115/109)": 16,
+    "Внутренний сервис «Нейрон» (методология)": 132,
+    "Общая миграция (cross-cutting)": 22,
+    "Мониторинг и статистика": 4
+  },
+  "amendments_recorded": 12,
+  "regimes_recorded": 8,
+  "provenance_rows": 27,
+  "thesis_rows": 128,
+  "control_numbers_match": true
+}

@@ -1,0 +1,24 @@
+{
+  "docx_regenerated_at": "2026-05-09T06:17:30",
+  "docx_note": "Markdown corpus is canonical; DOCX corpus is capped for Word performance if needed.",
+  "Промпт_для_агента_перекрестное_сравнение_v8.md": {
+    "exists": true,
+    "bytes": 12039
+  },
+  "Промпт_для_агента_перекрестное_сравнение_v8.docx": {
+    "exists": true,
+    "bytes": 40947
+  },
+  "Единый_корпус_документов_для_агента_v8.md": {
+    "exists": true,
+    "bytes": 2066548
+  },
+  "Единый_корпус_документов_для_агента_v8.docx": {
+    "exists": true,
+    "bytes": 528198
+  },
+  "Индекс_единого_корпуса_v8.csv": {
+    "exists": true,
+    "bytes": 11736
+  }
+}
