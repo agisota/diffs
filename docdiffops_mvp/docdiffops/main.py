@@ -116,7 +116,9 @@ def get_batch(batch_id: str):
         except Exception as exc:
             import logging
             logging.getLogger(__name__).warning("list_reviews_for_batch enrich failed: %s", exc)
-    return state
+    # State mutates on each accept/reject + on rerender — never let CF cache it.
+    from fastapi.responses import JSONResponse
+    return JSONResponse(state, headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"})
 
 
 @app.post("/batches/{batch_id}/documents")
