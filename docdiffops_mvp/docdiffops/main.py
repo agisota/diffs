@@ -203,6 +203,32 @@ def download_artifact(batch_id: str, path: str):
     return FileResponse(p)
 
 
+@app.get("/batches/{batch_id}/docs/{doc_id}/canonical.pdf")
+def download_canonical_pdf(batch_id: str, doc_id: str):
+    """Stream the canonical PDF of a single document.
+
+    Used by the inline viewer to render any format (DOCX/PPTX/HTML/PDF) — the
+    normalize stage already converts everything to PDF via LibreOffice. Falls
+    back to raw_path when the document is itself a .pdf and no separate
+    canonical was produced.
+    """
+    try:
+        state = load_state(batch_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="batch not found")
+    doc = next((d for d in state.get("documents", []) if d.get("doc_id") == doc_id), None)
+    if not doc:
+        raise HTTPException(status_code=404, detail="doc not found")
+    rel = doc.get("canonical_pdf") or (doc.get("raw_path") if (doc.get("ext") or "").lower() == ".pdf" else None)
+    if not rel:
+        raise HTTPException(status_code=404, detail="no canonical PDF for this document")
+    base = batch_dir(batch_id).resolve()
+    p = (base / rel).resolve()
+    if not str(p).startswith(str(base)) or not p.exists() or not p.is_file():
+        raise HTTPException(status_code=404, detail="canonical PDF file missing on disk")
+    return FileResponse(p, media_type="application/pdf")
+
+
 # ---------------------------------------------------------------------------
 # PR-4.1: review decisions
 # ---------------------------------------------------------------------------

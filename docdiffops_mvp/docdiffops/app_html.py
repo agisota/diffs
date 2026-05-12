@@ -904,7 +904,7 @@ function renderPairs(s) {
       </div>
       <div class='links'>
         ${pairArts.map(a => `<a class='pill-link' href='${BASE}/batches/${currentBatchId}/download/${escapeHtml(a.path)}' target='_blank'>${escapeHtml(a.type || 'download')} ↓</a>`).join('')}
-        ${pairArts.some(a => /(?:^|\/)pairs\/[^/]+\/(?:pagewise_redgreen|lhs_red|rhs_green)\.pdf$/.test(a.path||'')) ? `<button class='pill-link' data-viewer-pair='${escapeHtml(p.pair_id)}' style='background:rgba(76,195,255,0.12);border-color:var(--blue-dim);color:var(--blue)'>&#128366; inline viewer</button>` : ''}
+        <button class='pill-link' data-viewer-pair='${escapeHtml(p.pair_id)}' style='background:rgba(76,195,255,0.12);border-color:var(--blue-dim);color:var(--blue)'>&#128366; inline viewer</button>
         <button class='pill-link' data-pair='${escapeHtml(p.pair_id)}'>view events →</button>
       </div>
     `;
@@ -991,12 +991,28 @@ function _pairArtifactPath(state, pairId, basename) {
   return null;
 }
 
-async function _loadPdfFromArtifact(pairId, basename) {
-  if (!detailState) return null;
+// Try canonical_pdf endpoint first (works for DOCX/PPTX/HTML/PDF), then
+// fall back to per-pair annotated PDFs (lhs_red / rhs_green) if those exist.
+async function _loadPdfForSide(side, pair, pairId) {
+  const docId = side === 'lhs' ? pair.lhs_doc_id : pair.rhs_doc_id;
+  // 1. canonical PDF of the document (primary source for M2)
+  if (docId) {
+    try {
+      const url = BASE + '/batches/' + currentBatchId + '/docs/' + docId + '/canonical.pdf';
+      const head = await fetch(url, {method: 'HEAD'});
+      if (head.ok) {
+        return await pdfjsLib.getDocument({url}).promise;
+      }
+    } catch (_) { /* fall through */ }
+  }
+  // 2. fallback: per-pair annotated PDF (works only when both sources were PDF)
+  const basename = side === 'lhs' ? 'lhs_red.pdf' : 'rhs_green.pdf';
   const p = _pairArtifactPath(detailState, pairId, basename);
-  if (!p) return null;
-  const url = BASE + '/batches/' + currentBatchId + '/download/' + p;
-  return await pdfjsLib.getDocument({url}).promise;
+  if (p) {
+    const url = BASE + '/batches/' + currentBatchId + '/download/' + p;
+    try { return await pdfjsLib.getDocument({url}).promise; } catch (_) { /* nothing */ }
+  }
+  return null;
 }
 
 async function openInlineViewer(pairId) {
@@ -1018,8 +1034,8 @@ async function openInlineViewer(pairId) {
   renderViewerSidebar('');
   try {
     const [lhs, rhs] = await Promise.all([
-      _loadPdfFromArtifact(pairId, 'lhs_red.pdf').catch(() => null),
-      _loadPdfFromArtifact(pairId, 'rhs_green.pdf').catch(() => null),
+      _loadPdfForSide('lhs', pair, pairId).catch(() => null),
+      _loadPdfForSide('rhs', pair, pairId).catch(() => null),
     ]);
     viewerState.lhsPdf = lhs;
     viewerState.rhsPdf = rhs;
