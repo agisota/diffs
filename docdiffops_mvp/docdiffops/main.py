@@ -195,6 +195,28 @@ def run_batch_endpoint(batch_id: str, profile: str = Query("fast", pattern="^(fa
     return {"mode": "async", "batch_id": batch_id, "task_id": task.id}
 
 
+@app.post("/batches/{batch_id}/rerender-compare")
+def rerender_compare_endpoint(batch_id: str):
+    """Re-run compare+enrich on an existing batch without re-uploading.
+
+    Useful after pipeline fixes (bbox isinstance bug, normalize TEXT_EXTS,
+    enrich threshold tuning) — old batches stay with stale event positions
+    until manually re-compared. This endpoint reuses cached extract blocks
+    on disk, regenerates events, upserts into DB preserving review_decisions.
+    """
+    try:
+        load_state(batch_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="batch not found")
+    from .pipeline import rerender_compare
+    try:
+        metrics = rerender_compare(batch_id)
+    except Exception as e:
+        logger.exception("rerender_compare failed for %s", batch_id)
+        raise HTTPException(status_code=500, detail=f"rerender failed: {e}")
+    return {"batch_id": batch_id, "mode": "rerender-compare", "metrics": metrics}
+
+
 @app.get("/tasks/{task_id}")
 def get_task(task_id: str):
     res = run_batch_task.AsyncResult(task_id)

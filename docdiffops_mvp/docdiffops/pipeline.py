@@ -745,6 +745,110 @@ def _build_repo() -> Any | None:
         return None
 
 
+def rerender_compare(batch_id: str) -> dict[str, Any]:
+    """Re-run the compare stage on an existing batch without re-uploading or
+    re-normalizing. Loads cached extract blocks from disk, regenerates events
+    via compare_pair + LLM (if enabled) + enrich, and upserts events into the
+    DB so review_decisions linked by event_id survive.
+
+    Returns metrics dict mirroring run_batch.
+    """
+    state = load_state(batch_id)
+    base = batch_dir(batch_id)
+    repo = _build_repo()
+    pairs = state.get("pairs") or state.get("pair_runs") or []
+    docs_map = {d["doc_id"]: d for d in (state.get("documents") or [])}
+    q = (state.get("config") or {}).get("compare", {})
+    same_threshold = int(q.get("same_threshold", 92))
+    partial_threshold = int(q.get("partial_threshold", 78))
+    start = time.time()
+    all_events: list[dict[str, Any]] = []
+    pair_summaries: list[dict[str, Any]] = []
+
+    for pair in pairs:
+        lhs_doc = docs_map.get(pair["lhs_doc_id"])
+        rhs_doc = docs_map.get(pair["rhs_doc_id"])
+        if not lhs_doc or not rhs_doc:
+            continue
+        lhs_ex = read_json(base / (lhs_doc.get("extracted_json") or ""), {})
+        rhs_ex = read_json(base / (rhs_doc.get("extracted_json") or ""), {})
+        lhs_blocks = lhs_ex.get("blocks") or []
+        rhs_blocks = rhs_ex.get("blocks") or []
+        if not lhs_blocks or not rhs_blocks:
+            continue
+
+        events, summary = compare_pair(
+            pair, lhs_doc, rhs_doc, lhs_blocks, rhs_blocks,
+            same_threshold=same_threshold, partial_threshold=partial_threshold,
+        )
+
+        # Apply LLM pair-diff if enabled, mirroring run_all_pairs behaviour.
+        if llm_pair_diff_enabled():
+            try:
+                llm_events = llm_pair_diff(pair, lhs_doc, rhs_doc, lhs_blocks, rhs_blocks)
+            except Exception as e:
+                logger.warning("rerender llm_pair_diff failed for %s: %s", pair.get("pair_id"), e)
+                llm_events = []
+            if llm_events:
+                events = list(llm_events)
+                _refresh_status_counts(summary, events)
+
+        # Best-effort enrichment.
+        try:
+            from .enrich_positions import enrich_llm_events
+            enrich_llm_events(events, lhs_blocks, rhs_blocks)
+        except Exception as e:
+            logger.warning("rerender enrich failed for %s: %s", pair.get("pair_id"), e)
+
+        # Persist to disk.
+        pair_dir = base / "pairs" / pair["pair_id"]
+        pair_dir.mkdir(parents=True, exist_ok=True)
+        write_jsonl(pair_dir / "diff_events.jsonl", events)
+        write_json(pair_dir / "pair_summary.json", summary)
+        all_events.extend(events)
+        pair_summaries.append(summary)
+
+        # Upsert into DB — review_decisions keyed by event_id survive.
+        if repo is not None:
+            for ev in events:
+                lhs_ev = ev.get("lhs") or {}
+                rhs_ev = ev.get("rhs") or {}
+                _safe(
+                    "rerender_upsert",
+                    repo.add_diff_event,
+                    event_id=ev["event_id"],
+                    pair_run_id=ev["pair_id"],
+                    comparison_type=ev.get("comparison_type") or "block_semantic_diff",
+                    status=ev["status"],
+                    severity=ev.get("severity") or "low",
+                    confidence=ev.get("confidence"),
+                    lhs_doc_id=lhs_ev.get("doc_id"),
+                    lhs_page=lhs_ev.get("page_no"),
+                    lhs_block_id=lhs_ev.get("block_id"),
+                    lhs_bbox=lhs_ev.get("bbox") if isinstance(lhs_ev.get("bbox"), (list, dict)) else None,
+                    lhs_quote=lhs_ev.get("quote"),
+                    rhs_doc_id=rhs_ev.get("doc_id"),
+                    rhs_page=rhs_ev.get("page_no"),
+                    rhs_block_id=rhs_ev.get("block_id"),
+                    rhs_bbox=rhs_ev.get("bbox") if isinstance(rhs_ev.get("bbox"), (list, dict)) else None,
+                    rhs_quote=rhs_ev.get("quote"),
+                    explanation_short=ev.get("explanation_short"),
+                    review_required=bool(ev.get("review_required")),
+                    update_if_exists=True,
+                )
+
+    state["diff_events"] = all_events
+    state["pair_summaries"] = pair_summaries
+    state["metrics"] = {
+        "time_to_report_sec": round(time.time() - start, 2),
+        "pairs": len(pairs),
+        "events": len(all_events),
+        "rerender": True,
+    }
+    save_state(batch_id, state)
+    return state["metrics"]
+
+
 def run_batch(batch_id: str, profile: str = "fast") -> dict[str, Any]:
     state = load_state(batch_id)
     repo = _build_repo()

@@ -325,6 +325,13 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
 .viewer-modal .ev-popover button.reject { background: rgba(229,72,77,0.18); border: 1px solid var(--red); color: var(--red); padding: 6px 14px; border-radius: 5px; font-size: 12px; font-weight: 600; flex: 1; }
 .viewer-modal .ev-popover button:disabled { opacity: 0.4; cursor: wait; }
 .viewer-modal .ev-popover .pop-prev { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); font-size: 11.5px; color: var(--mute); }
+.pair-card .thumbs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; min-height: 0; }
+.pair-card .thumbs .thumb { background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 4px; min-height: 60px; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; }
+.pair-card .thumbs .thumb canvas { width: 100%; height: auto; display: block; max-height: 180px; object-fit: contain; }
+.pair-card .thumbs .thumb .side-lbl { position: absolute; top: 3px; left: 4px; font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; padding: 1px 5px; border-radius: 2px; font-weight: 600; }
+.pair-card .thumbs .thumb .side-lbl.lhs { background: rgba(229,72,77,0.7); color: white; }
+.pair-card .thumbs .thumb .side-lbl.rhs { background: rgba(46,194,126,0.7); color: white; }
+.pair-card .thumbs .thumb-empty { color: var(--mute); font-size: 11px; font-style: italic; }
 </style>
 </head>
 <body>
@@ -407,7 +414,8 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
       <span style="margin-left:auto;align-self:center;display:flex;gap:6px;align-items:center">
         <span class="muted" style="font-size:12px">Anchor:</span>
         <select id="anchor-select" class="batch-input" style="margin:0;width:auto;min-width:160px;font-size:12.5px;padding:4px 8px"></select>
-        <button class="btn" id="btn-rerender" style="padding:5px 10px;font-size:12px">↻ Rerender</button>
+        <button class="btn" id="btn-rerender" style="padding:5px 10px;font-size:12px" title="Перерендерить отчёты по существующим событиям">↻ Rerender</button>
+        <button class="btn" id="btn-rerender-compare" style="padding:5px 10px;font-size:12px;background:rgba(76,195,255,0.12);border-color:var(--blue-dim);color:var(--blue)" title="Пересчитать сравнение по существующим extract'ам (применяет последние фиксы pipeline без re-upload)">🔄 Пересчитать compare</button>
       </span>
     </div>
 
@@ -731,6 +739,17 @@ async function openBatch(batchId) {
       const pairsTabBtn = document.querySelector('.tab-line[data-detail-tab="pairs"]');
       if (pairsTabBtn) pairsTabBtn.click();
     }
+    // M5+ polish: when the batch has exactly one pair, auto-open the
+    // inline viewer for it — no extra click needed. Best UX for the
+    // "compare two specific documents" workflow.
+    if (pairsCount === 1) {
+      const onlyPair = (s.pair_runs || s.pairs || [])[0];
+      if (onlyPair && onlyPair.pair_id) {
+        setTimeout(() => {
+          try { openInlineViewer(onlyPair.pair_id); } catch (_) {}
+        }, 300);  // small delay so detailState is fully painted
+      }
+    }
     location.hash = '#batch/' + batchId;
   } catch (e) {
     document.getElementById('detail-kpis').innerHTML = `<div class='empty'>Ошибка: ${escapeHtml(e.message)}</div>`;
@@ -975,6 +994,10 @@ function renderPairs(s) {
         <div>− <span>${deleted}</span></div>
         ${high ? `<div style='color:var(--red)'>high <span style='color:var(--red)'>${high}</span></div>` : ''}
       </div>
+      <div class='thumbs' data-pair-id='${escapeHtml(p.pair_id)}'>
+        <div class='thumb' data-side='lhs' data-doc='${escapeHtml(p.lhs_doc_id || '')}'><span class='side-lbl lhs'>LHS</span><span class='thumb-empty'>…</span></div>
+        <div class='thumb' data-side='rhs' data-doc='${escapeHtml(p.rhs_doc_id || '')}'><span class='side-lbl rhs'>RHS</span><span class='thumb-empty'>…</span></div>
+      </div>
       <button data-viewer-pair='${escapeHtml(p.pair_id)}' style='margin-top:12px;width:100%;padding:10px 16px;background:linear-gradient(135deg, #4cc3ff, #2b95cc);color:#04111a;border:0;border-radius:6px;font-weight:600;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px'>
         📖 Открыть документы с подсветкой правок
       </button>
@@ -992,6 +1015,34 @@ function renderPairs(s) {
     if (viewerBtn) viewerBtn.addEventListener('click', () => openInlineViewer(p.pair_id));
     list.appendChild(card);
   }
+  // Lazy-render thumbnails using IntersectionObserver — avoid rendering
+  // every pair's PDF upfront which is expensive for 60+ pair stress batches.
+  const thumbObserver = new IntersectionObserver(async (entries) => {
+    for (const en of entries) {
+      if (!en.isIntersecting) continue;
+      const thumb = en.target;
+      thumbObserver.unobserve(thumb);
+      const docId = thumb.dataset.doc;
+      if (!docId || !window.pdfjsLib) continue;
+      try {
+        const pdf = await pdfjsLib.getDocument({url: BASE + '/batches/' + currentBatchId + '/docs/' + docId + '/canonical.pdf'}).promise;
+        const page = await pdf.getPage(1);
+        const baseViewport = page.getViewport({scale: 1.0});
+        const scale = 180 / baseViewport.width;  // target ~180px width
+        const viewport = page.getViewport({scale});
+        const canvas = document.createElement('canvas');
+        canvas.width = viewport.width; canvas.height = viewport.height;
+        await page.render({canvasContext: canvas.getContext('2d'), viewport}).promise;
+        const empty = thumb.querySelector('.thumb-empty');
+        if (empty) empty.remove();
+        thumb.appendChild(canvas);
+      } catch (_) {
+        const empty = thumb.querySelector('.thumb-empty');
+        if (empty) empty.textContent = '(нет PDF)';
+      }
+    }
+  }, {rootMargin: '100px'});
+  document.querySelectorAll('.pair-card .thumb').forEach(t => thumbObserver.observe(t));
 }
 
 // -------- documents --------
@@ -1043,6 +1094,22 @@ document.getElementById('btn-rerender').addEventListener('click', async () => {
     toast('Rerender failed: ' + e.message, 'error');
   } finally {
     btn.disabled = false; btn.textContent = '↻ Rerender';
+  }
+});
+document.getElementById('btn-rerender-compare').addEventListener('click', async () => {
+  if (!currentBatchId) return;
+  if (!confirm('Запустить пересчёт сравнения для всех пар? Это применит последние фиксы pipeline (bbox, enrich) без re-upload. Существующие review_decisions сохранятся.')) return;
+  const btn = document.getElementById('btn-rerender-compare');
+  btn.disabled = true; const orig = btn.textContent; btn.textContent = '...пересчёт';
+  try {
+    const r = await fetch(BASE + '/batches/' + currentBatchId + '/rerender-compare', { method: 'POST' }).then(r => r.json());
+    const m = r.metrics || {};
+    toast(`Compare пересчитан: ${m.pairs ?? 0} пар, ${m.events ?? 0} событий за ${m.time_to_report_sec ?? '?'}s`, 'success');
+    openBatch(currentBatchId);
+  } catch (e) {
+    toast('Пересчёт failed: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = orig;
   }
 });
 

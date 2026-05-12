@@ -292,11 +292,37 @@ class BatchRepository:
         rhs_quote: str | None = None,
         explanation_short: str | None = None,
         review_required: bool = False,
+        update_if_exists: bool = False,
     ) -> DiffEvent:
-        """Insert a DiffEvent. Idempotent on event_id collision."""
+        """Insert a DiffEvent. Idempotent on event_id collision.
+
+        When ``update_if_exists=True`` (re-compare path) the row's content
+        fields are refreshed in-place so FK links from ``review_decisions``
+        pointing to this ``event_id`` survive unchanged.
+        """
         with get_session() as session:
             existing = session.get(DiffEvent, event_id)
             if existing is not None:
+                if update_if_exists:
+                    # Re-compare path: refresh content/positions while preserving FK
+                    # links (review_decisions point to this id).
+                    existing.comparison_type = comparison_type
+                    existing.status = status
+                    existing.severity = severity
+                    existing.confidence = confidence
+                    existing.lhs_doc_id = lhs_doc_id
+                    existing.lhs_page = lhs_page
+                    existing.lhs_block_id = lhs_block_id
+                    existing.lhs_bbox = lhs_bbox
+                    existing.lhs_quote = lhs_quote
+                    existing.rhs_doc_id = rhs_doc_id
+                    existing.rhs_page = rhs_page
+                    existing.rhs_block_id = rhs_block_id
+                    existing.rhs_bbox = rhs_bbox
+                    existing.rhs_quote = rhs_quote
+                    existing.explanation_short = explanation_short
+                    existing.review_required = review_required
+                    session.flush()
                 return existing
             ev = DiffEvent(
                 id=event_id,
