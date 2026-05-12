@@ -253,6 +253,47 @@ def rerender_full_endpoint(batch_id: str, sync: bool = Query(False)):
     return {"batch_id": batch_id, "mode": "rerender-full-async", "task_id": task.id}
 
 
+@app.get("/batches/{batch_id}/pair/{pair_id}/merged.docx")
+def get_merged_docx(batch_id: str, pair_id: str):
+    """Generate a 'merged' DOCX with accept/reject decisions applied.
+
+    On-demand generation — not cached, so reflects the latest reviews.
+    Pending events stay as Word track-changes; decided events are
+    materialized into normal paragraphs.
+    """
+    try:
+        state = load_state(batch_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="batch not found")
+    pair = next(
+        (p for p in (state.get("pair_runs") or state.get("pairs") or []) if p.get("pair_id") == pair_id),
+        None,
+    )
+    if not pair:
+        raise HTTPException(status_code=404, detail="pair not found")
+    docs = {d["doc_id"]: d for d in (state.get("documents") or [])}
+    lhs_doc = docs.get(pair.get("lhs_doc_id"))
+    rhs_doc = docs.get(pair.get("rhs_doc_id"))
+    events = [e for e in (state.get("diff_events") or []) if e.get("pair_id") == pair_id]
+    from .render_merged_docx import render_merged_docx
+    out_dir = batch_dir(batch_id) / "pairs" / pair_id
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / "merged.docx"
+    try:
+        counts = render_merged_docx(out_path, pair_id, events, lhs_doc=lhs_doc, rhs_doc=rhs_doc)
+    except Exception as e:
+        logger.exception("merged docx render failed for %s/%s", batch_id, pair_id)
+        raise HTTPException(status_code=500, detail=f"merged render failed: {e}")
+    fname = f"merged_{pair_id[-12:]}.docx"
+    resp = FileResponse(
+        out_path,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        filename=fname,
+    )
+    resp.headers["X-Merge-Counts"] = ",".join(f"{k}={v}" for k, v in counts.items())
+    return resp
+
+
 @app.get("/tasks/{task_id}")
 def get_task(task_id: str):
     res = run_batch_task.AsyncResult(task_id)

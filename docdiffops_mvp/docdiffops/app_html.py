@@ -994,6 +994,8 @@ function renderPairs(s) {
     const deleted = ev.filter(e => e.status === 'deleted').length;
     const high = ev.filter(e => e.severity === 'high').length;
     const pairArts = arts.filter(a => (a.path || '').includes(p.pair_id));
+    const pairEvents = ev;
+    const reviewedCount = pairEvents.filter(e => e.last_review).length;
     card.innerHTML = `
       <div class='head'>
         <div style='flex:1;min-width:0'>
@@ -1018,6 +1020,7 @@ function renderPairs(s) {
         <div>+ <span>${added}</span></div>
         <div>− <span>${deleted}</span></div>
         ${high ? `<div style='color:var(--red)'>high <span style='color:var(--red)'>${high}</span></div>` : ''}
+        ${reviewedCount > 0 ? `<div style='color:var(--blue)'>reviewed <span style='color:var(--blue)'>${reviewedCount}</span></div>` : ''}
       </div>
       <div class='thumbs' data-pair-id='${escapeHtml(p.pair_id)}'>
         <div class='thumb' data-side='lhs' data-doc='${escapeHtml(p.lhs_doc_id || '')}'><span class='side-lbl lhs'>LHS</span><span class='thumb-empty'>…</span></div>
@@ -1029,6 +1032,7 @@ function renderPairs(s) {
       <div class='links' style='margin-top:8px'>
         ${pairArts.map(a => `<a class='pill-link' href='${BASE}/batches/${currentBatchId}/download/${escapeHtml(a.path)}' target='_blank'>${escapeHtml(a.type || 'download')} ↓</a>`).join('')}
         <button class='pill-link' data-pair='${escapeHtml(p.pair_id)}'>view events →</button>
+        ${reviewedCount > 0 ? `<a class='pill-link' href='${BASE}/batches/${currentBatchId}/pair/${escapeHtml(p.pair_id)}/merged.docx' target='_blank' title='Скачать итоговый DOCX с применёнными accept/reject решениями'>📥 merged</a>` : ''}
       </div>
     `;
     card.querySelector('button[data-pair]').addEventListener('click', () => {
