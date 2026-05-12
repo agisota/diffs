@@ -306,6 +306,10 @@ def get_merged_docx(batch_id: str, pair_id: str):
         filename=fname,
     )
     resp.headers["X-Merge-Counts"] = ",".join(f"{k}={v}" for k, v in counts.items())
+    # Bust caches: this document mutates with every accept/reject decision,
+    # and Cloudflare was serving the stale first-rendered version by ETag.
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
     return resp
 
 
