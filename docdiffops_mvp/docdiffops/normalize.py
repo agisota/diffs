@@ -23,15 +23,24 @@ def convert_to_canonical_pdf(raw_path: Path, out_dir: Path) -> Path | None:
         shutil.copy2(raw_path, dst)
         return dst
 
-    if ext in OFFICE_EXTS:
+    # Office formats and text-based formats both go through LibreOffice
+    # headless. Text formats (.html, .txt, .md, .csv, .xml) were previously
+    # skipped, which left canonical_pdf=None and made the inline viewer
+    # unusable for HTML/TXT corpora.
+    if ext in OFFICE_EXTS or ext in TEXT_EXTS:
         if not has_binary("libreoffice") and not has_binary("soffice"):
             return None
         cmd_bin = "libreoffice" if has_binary("libreoffice") else "soffice"
+        # For .txt LibreOffice needs an explicit input filter, otherwise it
+        # imports as Calc spreadsheet by default for CSV-looking content.
+        convert_target = "pdf"
+        if ext in {".txt", ".md"}:
+            convert_target = 'pdf:writer_pdf_Export:"EmbedStandardFonts":true'
         rc, stdout, stderr = run_cmd([
             cmd_bin,
             "--headless",
             "--convert-to",
-            "pdf",
+            convert_target,
             "--outdir",
             str(out_dir),
             str(raw_path),

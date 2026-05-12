@@ -689,6 +689,15 @@ async function openBatch(batchId) {
     renderAnchorSelector(s);
     loadAudit(batchId);
     loadTopics(batchId);
+    // Default to the Pairs tab when the batch has pairs — that's where
+    // the inline viewer lives. Events tab was the original "table of
+    // parameters" the user complained about; Pairs is closer to the
+    // "document-as-document" experience.
+    const pairsCount = (s.pair_runs || s.pairs || []).length;
+    if (pairsCount >= 1) {
+      const pairsTabBtn = document.querySelector('.tab-line[data-detail-tab="pairs"]');
+      if (pairsTabBtn) pairsTabBtn.click();
+    }
     location.hash = '#batch/' + batchId;
   } catch (e) {
     document.getElementById('detail-kpis').innerHTML = `<div class='empty'>Ошибка: ${escapeHtml(e.message)}</div>`;
@@ -933,9 +942,11 @@ function renderPairs(s) {
         <div>− <span>${deleted}</span></div>
         ${high ? `<div style='color:var(--red)'>high <span style='color:var(--red)'>${high}</span></div>` : ''}
       </div>
-      <div class='links'>
+      <button data-viewer-pair='${escapeHtml(p.pair_id)}' style='margin-top:12px;width:100%;padding:10px 16px;background:linear-gradient(135deg, #4cc3ff, #2b95cc);color:#04111a;border:0;border-radius:6px;font-weight:600;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px'>
+        &#128366; Открыть документы с подсветкой правок
+      </button>
+      <div class='links' style='margin-top:8px'>
         ${pairArts.map(a => `<a class='pill-link' href='${BASE}/batches/${currentBatchId}/download/${escapeHtml(a.path)}' target='_blank'>${escapeHtml(a.type || 'download')} ↓</a>`).join('')}
-        <button class='pill-link' data-viewer-pair='${escapeHtml(p.pair_id)}' style='background:rgba(76,195,255,0.12);border-color:var(--blue-dim);color:var(--blue)'>&#128366; inline viewer</button>
         <button class='pill-link' data-pair='${escapeHtml(p.pair_id)}'>view events →</button>
       </div>
     `;
