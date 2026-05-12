@@ -98,10 +98,14 @@ def suggest_for_event(
         "temperature": 0.2,
         "response_format": {"type": "json_object"},
         "max_tokens": 400,
+        # Provider (api.zed.md) defaults to streaming when this is omitted —
+        # force non-streaming so the body is one JSON blob, not SSE chunks.
+        "stream": False,
     }
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
+        "Accept": "application/json",
     }
     try:
         req = urllib.request.Request(
@@ -114,11 +118,41 @@ def suggest_for_event(
             raw = resp.read().decode("utf-8", errors="replace")
         try:
             data: dict[str, Any] = json.loads(raw)
-        except json.JSONDecodeError as je:
-            # Log first 500 chars of the actual response to help diagnose
-            # provider quirks (HTML error page, SSE stream, etc.).
-            logger.warning("ai_suggest: non-JSON response from %s: %r", api_base, raw[:500])
-            raise RuntimeError(f"LLM returned non-JSON ({len(raw)}B): {raw[:200]!r}") from je
+        except json.JSONDecodeError:
+            # Some providers (api.zed.md observed) ignore stream:false and
+            # still emit SSE chunks. Parse the chunks ourselves and rebuild
+            # a synthetic openai-shape response.
+            if "data:" in raw:
+                content_parts: list[str] = []
+                final_usage = None
+                for line in raw.splitlines():
+                    line = line.strip()
+                    if not line.startswith("data:"):
+                        continue
+                    payload = line[5:].strip()
+                    if not payload or payload == "[DONE]":
+                        continue
+                    try:
+                        chunk = json.loads(payload)
+                    except json.JSONDecodeError:
+                        continue
+                    for ch in chunk.get("choices") or []:
+                        delta = ch.get("delta") or {}
+                        if isinstance(delta.get("content"), str):
+                            content_parts.append(delta["content"])
+                    if chunk.get("usage"):
+                        final_usage = chunk["usage"]
+                if content_parts:
+                    data = {
+                        "choices": [{"message": {"content": "".join(content_parts)}}],
+                        "usage": final_usage,
+                    }
+                else:
+                    logger.warning("ai_suggest: SSE parsed but no content from %s: %r", api_base, raw[:500])
+                    raise RuntimeError(f"LLM SSE returned no content: {raw[:200]!r}")
+            else:
+                logger.warning("ai_suggest: non-JSON response from %s: %r", api_base, raw[:500])
+                raise RuntimeError(f"LLM returned non-JSON ({len(raw)}B): {raw[:200]!r}")
     except urllib.error.HTTPError as e:
         body_text = ""
         try:
