@@ -217,6 +217,28 @@ def rerender_compare_endpoint(batch_id: str):
     return {"batch_id": batch_id, "mode": "rerender-compare", "metrics": metrics}
 
 
+@app.post("/batches/{batch_id}/rerender-full")
+def rerender_full_endpoint(batch_id: str):
+    """Deep rerender: drop cached extracts, re-run normalize+extract+compare+enrich.
+
+    Use when previously-uploaded documents need to pick up updated extract
+    behaviour (e.g. HTML uploaded before normalize.py learned to convert
+    text formats to canonical PDF). Preserves review_decisions via stable
+    event_ids upsert.
+    """
+    try:
+        load_state(batch_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="batch not found")
+    from .pipeline import rerender_full
+    try:
+        metrics = rerender_full(batch_id)
+    except Exception as e:
+        logger.exception("rerender_full failed for %s", batch_id)
+        raise HTTPException(status_code=500, detail=f"rerender-full failed: {e}")
+    return {"batch_id": batch_id, "mode": "rerender-full", "metrics": metrics}
+
+
 @app.get("/tasks/{task_id}")
 def get_task(task_id: str):
     res = run_batch_task.AsyncResult(task_id)

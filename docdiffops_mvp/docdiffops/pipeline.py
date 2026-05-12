@@ -849,6 +849,61 @@ def rerender_compare(batch_id: str) -> dict[str, Any]:
     return state["metrics"]
 
 
+def rerender_full(batch_id: str) -> dict[str, Any]:
+    """Force-rerun the entire pipeline on existing uploads: delete cached
+    extracts (so canonical_pdf-based extract regenerates with bbox), then
+    invoke run_batch. Preserves uploads themselves and review_decisions
+    that hang off stable event_ids.
+
+    Unlike rerender_compare this also re-runs normalize_and_extract, so
+    documents that never had canonical_pdf (e.g. HTML uploaded before the
+    TEXT_EXTS normalize fix) now get one and contribute bbox to events.
+    """
+    state = load_state(batch_id)
+    base = batch_dir(batch_id)
+    # Force re-extract by removing cached extract JSONs on disk and any
+    # cache files keyed by sha256. normalize_and_extract will regenerate
+    # them via extract_any(canonical_pdf=...) — picking up bbox.
+    for doc in state.get("documents", []):
+        # Delete on-disk extract.
+        ej_rel = doc.get("extracted_json")
+        if ej_rel:
+            (base / ej_rel).unlink(missing_ok=True)
+        # Forget metadata so normalize_and_extract re-runs the full block.
+        doc.pop("extracted_json", None)
+        doc.pop("block_count", None)
+        doc.pop("cache_extract_hit", None)
+        # Drop the content-addressed cache entry too so the cache helper
+        # actually recomputes instead of returning the stale value.
+        doc_sha = doc.get("sha256") or ""
+        if doc_sha:
+            try:
+                ck = cache.extract_key(doc_sha)
+                cache.invalidate("extract", ck)
+            except Exception as e:
+                logger.warning(
+                    "rerender_full: failed to drop cache for %s: %s",
+                    doc.get("doc_id"), e,
+                )
+        # Force normalize to re-run too — if the doc was HTML uploaded
+        # before the TEXT_EXTS fix, canonical_pdf was None and stayed
+        # None. Clearing the field lets convert_to_canonical_pdf re-try.
+        cpdf = doc.get("canonical_pdf")
+        if cpdf:
+            cpdf_path = base / cpdf
+            if cpdf_path.exists():
+                # Keep an existing canonical PDF — no need to re-generate
+                # the same artifact. Re-extract still happens above.
+                pass
+            else:
+                doc.pop("canonical_pdf", None)
+        # else: stays None, normalize_and_extract will try again
+    save_state(batch_id, state)
+    # Now the regular pipeline picks up: re-normalize + re-extract +
+    # full compare + LLM + enrich + write artifacts.
+    return run_batch(batch_id)
+
+
 def run_batch(batch_id: str, profile: str = "fast") -> dict[str, Any]:
     state = load_state(batch_id)
     repo = _build_repo()

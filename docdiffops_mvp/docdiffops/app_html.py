@@ -416,6 +416,7 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
         <select id="anchor-select" class="batch-input" style="margin:0;width:auto;min-width:160px;font-size:12.5px;padding:4px 8px"></select>
         <button class="btn" id="btn-rerender" style="padding:5px 10px;font-size:12px" title="Перерендерить отчёты по существующим событиям">↻ Rerender</button>
         <button class="btn" id="btn-rerender-compare" style="padding:5px 10px;font-size:12px;background:rgba(76,195,255,0.12);border-color:var(--blue-dim);color:var(--blue)" title="Пересчитать сравнение по существующим extract'ам (применяет последние фиксы pipeline без re-upload)">🔄 Пересчитать compare</button>
+        <button class="btn" id="btn-rerender-full" style="padding:5px 10px;font-size:12px;background:rgba(255,178,36,0.12);border-color:#7a5c1a;color:var(--amber)" title="Полный rerender: re-extract + re-compare. Долго на больших батчах. Применяется когда нужно подхватить новый normalize/extract для старых документов.">🔁 Полный rerender</button>
       </span>
     </div>
 
@@ -1108,6 +1109,23 @@ document.getElementById('btn-rerender-compare').addEventListener('click', async 
     openBatch(currentBatchId);
   } catch (e) {
     toast('Пересчёт failed: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = orig;
+  }
+});
+
+document.getElementById('btn-rerender-full').addEventListener('click', async () => {
+  if (!currentBatchId) return;
+  if (!confirm('Полный rerender: удалит кэшированные extract\'ы и пересоберёт всё заново (normalize → extract → compare → LLM → enrich). На больших батчах может занять несколько минут. Существующие review_decisions сохранятся. Продолжить?')) return;
+  const btn = document.getElementById('btn-rerender-full');
+  btn.disabled = true; const orig = btn.textContent; btn.textContent = '...полный rerender';
+  try {
+    const r = await fetch(BASE + '/batches/' + currentBatchId + '/rerender-full', { method: 'POST' }).then(r => r.json());
+    const m = r.metrics || {};
+    toast(`Полный rerender готов: ${m.pairs ?? 0} пар, ${m.events ?? 0} событий за ${m.time_to_report_sec ?? '?'}s`, 'success');
+    openBatch(currentBatchId);
+  } catch (e) {
+    toast('Полный rerender failed: ' + e.message, 'error');
   } finally {
     btn.disabled = false; btn.textContent = orig;
   }
