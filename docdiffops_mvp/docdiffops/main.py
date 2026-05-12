@@ -313,6 +313,91 @@ def get_merged_docx(batch_id: str, pair_id: str):
     return resp
 
 
+@app.get("/batches/{batch_id}/merged.zip")
+def get_merged_zip(batch_id: str):
+    """Bulk download: merged DOCX for every pair in the batch, packed as ZIP.
+
+    Each pair's file is named merged_{pair_id_last12}.docx inside the
+    archive. Same per-pair semantics as /pair/{pid}/merged.docx (confirmed
+    materialized, rejected restored to LHS, pending kept as track-changes).
+    Cache-Control: no-store so freshly-reviewed batches are always current.
+    """
+    try:
+        state = load_state(batch_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="batch not found")
+    pairs = state.get("pair_runs") or state.get("pairs") or []
+    if not pairs:
+        raise HTTPException(status_code=400, detail="no pairs in batch")
+    docs = {d["doc_id"]: d for d in (state.get("documents") or [])}
+    all_events = state.get("diff_events") or []
+
+    # Enrich with last_review once (batched, no N+1).
+    from .state import _get_repo
+    repo = _get_repo()
+    if repo is not None:
+        try:
+            latest = repo.list_reviews_for_batch(batch_id)
+            for e in all_events:
+                eid = e.get("event_id")
+                if eid and eid in latest:
+                    e["last_review"] = latest[eid]
+        except Exception as exc:
+            logger.warning("merged_zip: last_review enrich failed: %s", exc)
+
+    from .render_merged_docx import render_merged_docx
+    base = batch_dir(batch_id)
+    buf = io.BytesIO()
+    total_counts: dict[str, int] = {"confirmed": 0, "rejected": 0, "pending": 0, "skipped": 0, "ambiguous": 0}
+    rendered = 0
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for pair in pairs:
+            pid = pair.get("pair_id")
+            if not pid:
+                continue
+            lhs_doc = docs.get(pair.get("lhs_doc_id"))
+            rhs_doc = docs.get(pair.get("rhs_doc_id"))
+            evs = [e for e in all_events if e.get("pair_id") == pid]
+            out_dir = base / "pairs" / pid
+            out_dir.mkdir(parents=True, exist_ok=True)
+            out_path = out_dir / "merged.docx"
+            try:
+                counts = render_merged_docx(out_path, pid, evs, lhs_doc=lhs_doc, rhs_doc=rhs_doc)
+                for k, v in counts.items():
+                    total_counts[k] = total_counts.get(k, 0) + v
+                arcname = f"merged_{pid[-12:]}.docx"
+                zf.write(out_path, arcname=arcname)
+                rendered += 1
+            except Exception as e:
+                logger.exception("merged_zip: pair %s failed: %s", pid, e)
+                # Continue with other pairs; don't fail the whole archive
+                continue
+
+        # Audit manifest inside the ZIP
+        manifest = (
+            f"DocDiffOps merged.zip\n"
+            f"batch_id: {batch_id}\n"
+            f"rendered_pairs: {rendered} / {len(pairs)}\n"
+            f"total_events: {len(all_events)}\n"
+            f"counts: " + ", ".join(f"{k}={v}" for k, v in total_counts.items()) + "\n"
+        )
+        zf.writestr("README.txt", manifest)
+
+    buf.seek(0)
+    fname = f"merged_{batch_id[-12:]}.zip"
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{fname}"',
+            "X-Merge-Counts": ",".join(f"{k}={v}" for k, v in total_counts.items()),
+            "X-Pairs-Rendered": f"{rendered}/{len(pairs)}",
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+        },
+    )
+
+
 @app.get("/tasks/{task_id}")
 def get_task(task_id: str):
     res = run_batch_task.AsyncResult(task_id)

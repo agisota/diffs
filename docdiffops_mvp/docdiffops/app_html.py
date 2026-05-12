@@ -257,8 +257,17 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
 
 .viewer-modal .vm-body {
   flex: 1; min-height: 0; display: grid;
-  grid-template-columns: 1fr 1fr 320px; gap: 1px; background: var(--line);
+  grid-template-columns: 56px 1fr 1fr 320px; gap: 1px; background: var(--line);
 }
+.viewer-modal .vm-minimap { background: var(--panel); overflow-y: auto; padding: 6px 4px; display: flex; flex-direction: column; gap: 4px; align-items: center; }
+.viewer-modal .vm-minimap .mp-page { width: 44px; cursor: pointer; position: relative; border: 1px solid var(--line); background: var(--panel-2); border-radius: 3px; padding: 6px 2px; text-align: center; }
+.viewer-modal .vm-minimap .mp-page.active { border-color: var(--blue); box-shadow: 0 0 0 1px var(--blue); }
+.viewer-modal .vm-minimap .mp-page .mp-num { font-size: 9.5px; color: var(--mute); font-family: ui-monospace, monospace; }
+.viewer-modal .vm-minimap .mp-dots { display: flex; flex-wrap: wrap; gap: 2px; justify-content: center; margin-top: 3px; min-height: 6px; }
+.viewer-modal .vm-minimap .mp-dot { width: 5px; height: 5px; border-radius: 50%; }
+.viewer-modal .vm-minimap .mp-dot.added { background: var(--green); }
+.viewer-modal .vm-minimap .mp-dot.deleted { background: var(--red); }
+.viewer-modal .vm-minimap .mp-dot.modified, .viewer-modal .vm-minimap .mp-dot.partial { background: var(--amber); }
 .viewer-modal .vm-pane { background: var(--panel); display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 .viewer-modal .vm-pane .vp-head {
   padding: 6px 12px; border-bottom: 1px solid var(--line);
@@ -333,6 +342,17 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
 .pair-card .thumbs .thumb .side-lbl.lhs { background: rgba(229,72,77,0.7); color: white; }
 .pair-card .thumbs .thumb .side-lbl.rhs { background: rgba(46,194,126,0.7); color: white; }
 .pair-card .thumbs .thumb-empty { color: var(--mute); font-size: 11px; font-style: italic; }
+.pair-card .review-progress { margin-top: 10px; }
+.pair-card .review-progress .pbar { height: 5px; background: var(--panel-2); border-radius: 3px; overflow: hidden; display: flex; }
+.pair-card .review-progress .pbar > div { height: 100%; transition: width 0.3s ease; }
+.pair-card .review-progress .pbar .seg-conf { background: var(--green); }
+.pair-card .review-progress .pbar .seg-rej { background: var(--red); }
+.pair-card .review-progress .plabel { font-size: 11px; color: var(--mute); margin-top: 4px; display: flex; justify-content: space-between; }
+.pair-card .review-progress .plabel .pct { font-variant-numeric: tabular-nums; }
+.bulk-actions { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
+.bulk-actions button { background: var(--panel-2); border: 1px solid var(--line); color: var(--fg); padding: 3px 10px; border-radius: 4px; font-size: 11.5px; cursor: pointer; }
+.bulk-actions button:hover { border-color: var(--blue); }
+.bulk-actions button.danger:hover { border-color: var(--red); color: var(--red); }
 </style>
 </head>
 <body>
@@ -419,6 +439,7 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
         <button class="btn" id="btn-rerender" style="padding:5px 10px;font-size:12px" title="Перерендерить отчёты по существующим событиям">↻ Rerender</button>
         <button class="btn" id="btn-rerender-compare" style="padding:5px 10px;font-size:12px;background:rgba(76,195,255,0.12);border-color:var(--blue-dim);color:var(--blue)" title="Пересчитать сравнение по существующим extract'ам (применяет последние фиксы pipeline без re-upload)">🔄 Пересчитать compare</button>
         <button class="btn" id="btn-rerender-full" style="padding:5px 10px;font-size:12px;background:rgba(255,178,36,0.12);border-color:#7a5c1a;color:var(--amber)" title="Полный rerender: re-extract + re-compare. Долго на больших батчах. Применяется когда нужно подхватить новый normalize/extract для старых документов.">🔁 Полный rerender</button>
+        <a class="btn" id="btn-merged-zip" style="padding:5px 10px;font-size:12px;background:rgba(46,194,126,0.10);border-color:#1c5a3a;color:var(--green);text-decoration:none" href="#" title="Скачать все merged.docx архивом ZIP">📦 Все merged.zip</a>
       </span>
     </div>
 
@@ -506,6 +527,7 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
     <button class="vm-close" id="vm-close">Close ✕</button>
   </div>
   <div class="vm-body">
+    <div class="vm-minimap" id="vm-minimap"><div style="color:var(--mute);font-size:10px;padding:6px 0">map</div></div>
     <div class="vm-pane">
       <div class="vp-head"><span class="side lhs">LHS</span><span class="fname" id="vm-lhs-name">—</span></div>
       <div class="vp-body" id="vm-lhs-body"><div class="vp-loading">Loading…</div></div>
@@ -996,6 +1018,12 @@ function renderPairs(s) {
     const pairArts = arts.filter(a => (a.path || '').includes(p.pair_id));
     const pairEvents = ev;
     const reviewedCount = pairEvents.filter(e => e.last_review).length;
+    const confCount = pairEvents.filter(e => e.last_review && e.last_review.decision === 'confirmed').length;
+    const rejCount = pairEvents.filter(e => e.last_review && e.last_review.decision === 'rejected').length;
+    const totalEv = pairEvents.length;
+    const progressPct = totalEv > 0 ? Math.round((confCount + rejCount) / totalEv * 100) : 0;
+    const confW = totalEv > 0 ? (confCount / totalEv * 100) : 0;
+    const rejW = totalEv > 0 ? (rejCount / totalEv * 100) : 0;
     card.innerHTML = `
       <div class='head'>
         <div style='flex:1;min-width:0'>
@@ -1022,6 +1050,18 @@ function renderPairs(s) {
         ${high ? `<div style='color:var(--red)'>high <span style='color:var(--red)'>${high}</span></div>` : ''}
         ${reviewedCount > 0 ? `<div style='color:var(--blue)'>reviewed <span style='color:var(--blue)'>${reviewedCount}</span></div>` : ''}
       </div>
+      ${totalEv > 0 ? `<div class='review-progress'>
+        <div class='pbar'>
+          <div class='seg-conf' style='width:${confW}%'></div>
+          <div class='seg-rej' style='width:${rejW}%'></div>
+        </div>
+        <div class='plabel'><span>Прогресс review</span><span class='pct'>${confCount + rejCount} / ${totalEv} <span style='color:var(--mute)'>(${progressPct}%)</span></span></div>
+      </div>` : ''}
+      ${totalEv > 0 ? `<div class='bulk-actions'>
+        <button data-bulk-pair='${escapeHtml(p.pair_id)}' data-bulk-status='same' data-bulk-decision='confirmed' title='Принять все same'>✓ same (${pairEvents.filter(e => e.status === 'same' && !e.last_review).length})</button>
+        <button data-bulk-pair='${escapeHtml(p.pair_id)}' data-bulk-severity='low' data-bulk-decision='confirmed' title='Принять все low severity'>✓ low (${pairEvents.filter(e => (e.severity || 'low') === 'low' && !e.last_review).length})</button>
+        <button data-bulk-pair='${escapeHtml(p.pair_id)}' data-bulk-status='added' data-bulk-decision='rejected' class='danger' title='Отклонить все added'>✗ added (${pairEvents.filter(e => e.status === 'added' && !e.last_review).length})</button>
+      </div>` : ''}
       <div class='thumbs' data-pair-id='${escapeHtml(p.pair_id)}'>
         <div class='thumb' data-side='lhs' data-doc='${escapeHtml(p.lhs_doc_id || '')}'><span class='side-lbl lhs'>LHS</span><span class='thumb-empty'>…</span></div>
         <div class='thumb' data-side='rhs' data-doc='${escapeHtml(p.rhs_doc_id || '')}'><span class='side-lbl rhs'>RHS</span><span class='thumb-empty'>…</span></div>
@@ -1042,6 +1082,11 @@ function renderPairs(s) {
     });
     const viewerBtn = card.querySelector('button[data-viewer-pair]');
     if (viewerBtn) viewerBtn.addEventListener('click', () => openInlineViewer(p.pair_id));
+    card.querySelectorAll('button[data-bulk-pair]').forEach(bb => {
+      bb.addEventListener('click', () => bulkReview(
+        bb.dataset.bulkPair, bb.dataset.bulkStatus || null, bb.dataset.bulkSeverity || null, bb.dataset.bulkDecision
+      ));
+    });
     list.appendChild(card);
   }
   // Lazy-render thumbnails using IntersectionObserver — avoid rendering
@@ -1072,6 +1117,34 @@ function renderPairs(s) {
     }
   }, {rootMargin: '100px'});
   document.querySelectorAll('.pair-card .thumb').forEach(t => thumbObserver.observe(t));
+}
+
+async function bulkReview(pairId, statusFilter, severityFilter, decision) {
+  const evs = (detailState?.diff_events || []).filter(e => {
+    if (e.pair_id !== pairId) return false;
+    if (e.last_review) return false;
+    if (statusFilter && e.status !== statusFilter) return false;
+    if (severityFilter && (e.severity || 'low') !== severityFilter) return false;
+    return true;
+  });
+  if (!evs.length) { toast('Нет событий для применения', 'info'); return; }
+  const label = `${decision === 'confirmed' ? 'Принять' : 'Отклонить'} ${evs.length} событий`;
+  if (!confirm(label + '?')) return;
+  const name = localStorage.getItem('docdiff:reviewer') || prompt('Your name:', '') || 'anonymous';
+  localStorage.setItem('docdiff:reviewer', name);
+  toast(label + '…', 'info');
+  let ok = 0, fail = 0;
+  await Promise.all(evs.map(async e => {
+    try {
+      await fetch(BASE + '/events/' + e.event_id + '/review', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({decision, reviewer_name: name, comment: 'bulk action'})
+      });
+      ok++;
+    } catch (_) { fail++; }
+  }));
+  toast(`Готово: ${ok} обновлено${fail ? ', ' + fail + ' failed' : ''}`, fail ? 'error' : 'success');
+  openBatch(currentBatchId);
 }
 
 // -------- documents --------
@@ -1169,6 +1242,15 @@ async function _runAsyncRerender(endpoint, label) {
 
 document.getElementById('btn-rerender-compare').addEventListener('click', () => _runAsyncRerender('rerender-compare', 'Compare'));
 document.getElementById('btn-rerender-full').addEventListener('click', () => _runAsyncRerender('rerender-full', 'Полный rerender'));
+document.getElementById('btn-merged-zip').addEventListener('click', (e) => {
+  e.preventDefault();
+  if (!currentBatchId) return;
+  const a = document.createElement('a');
+  a.href = BASE + '/batches/' + currentBatchId + '/merged.zip?t=' + Date.now();
+  a.download = 'merged_' + currentBatchId.slice(-8) + '.zip';
+  document.body.appendChild(a); a.click(); a.remove();
+  toast('Архив генерируется… скачивание начнётся через несколько секунд', 'info');
+});
 
 // -------- inline viewer (M1) --------
 const viewerState = {
@@ -1312,6 +1394,39 @@ async function renderPdfPage(side, pageNo) {
     const key = 'docdiff:lastPage:' + (viewerState.pairId || '') + ':' + side;
     localStorage.setItem(key, String(pageNo));
   } catch (_) {}
+  renderMinimap();
+}
+
+function renderMinimap() {
+  const mm = document.getElementById('vm-minimap');
+  if (!mm) return;
+  const pdf = viewerState.lhsPdf || viewerState.rhsPdf;
+  if (!pdf) { mm.innerHTML = ''; return; }
+  const numPages = pdf.numPages;
+  const evByPage = {};
+  for (const e of viewerState.events) {
+    const p = (e.lhs && e.lhs.page_no) || (e.rhs && e.rhs.page_no) || (e.lhs_page) || (e.rhs_page);
+    if (!p) continue;
+    (evByPage[p] = evByPage[p] || []).push(e);
+  }
+  mm.innerHTML = '';
+  for (let p = 1; p <= numPages; p++) {
+    const div = document.createElement('div');
+    div.className = 'mp-page' + (p === viewerState.lhsPage ? ' active' : '');
+    div.innerHTML = '<div class="mp-num">' + p + '</div><div class="mp-dots"></div>';
+    const dots = div.querySelector('.mp-dots');
+    for (const e of (evByPage[p] || []).slice(0, 6)) {
+      const dot = document.createElement('span');
+      dot.className = 'mp-dot ' + (e.status || 'same');
+      dot.title = (e.status || '') + ': ' + ((e.lhs && e.lhs.quote || e.rhs && e.rhs.quote || '').slice(0, 60));
+      dots.appendChild(dot);
+    }
+    div.addEventListener('click', () => {
+      if (viewerState.lhsPdf) renderPdfPage('lhs', p);
+      if (viewerState.rhsPdf) renderPdfPage('rhs', p);
+    });
+    mm.appendChild(div);
+  }
 }
 
 function drawBboxOverlay(side, pageNo, overlay, viewport) {
