@@ -196,47 +196,61 @@ def run_batch_endpoint(batch_id: str, profile: str = Query("fast", pattern="^(fa
 
 
 @app.post("/batches/{batch_id}/rerender-compare")
-def rerender_compare_endpoint(batch_id: str):
+def rerender_compare_endpoint(batch_id: str, sync: bool = Query(False)):
     """Re-run compare+enrich on an existing batch without re-uploading.
 
     Useful after pipeline fixes (bbox isinstance bug, normalize TEXT_EXTS,
     enrich threshold tuning) — old batches stay with stale event positions
     until manually re-compared. This endpoint reuses cached extract blocks
     on disk, regenerates events, upserts into DB preserving review_decisions.
+
+    By default dispatches asynchronously via Celery; pass sync=true for
+    small batches that complete within the HTTP timeout.
     """
     try:
         load_state(batch_id)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="batch not found")
-    from .pipeline import rerender_compare
-    try:
-        metrics = rerender_compare(batch_id)
-    except Exception as e:
-        logger.exception("rerender_compare failed for %s", batch_id)
-        raise HTTPException(status_code=500, detail=f"rerender failed: {e}")
-    return {"batch_id": batch_id, "mode": "rerender-compare", "metrics": metrics}
+    if sync:
+        from .pipeline import rerender_compare
+        try:
+            metrics = rerender_compare(batch_id)
+        except Exception as e:
+            logger.exception("rerender_compare failed for %s", batch_id)
+            raise HTTPException(status_code=500, detail=f"rerender failed: {e}")
+        return {"batch_id": batch_id, "mode": "rerender-compare-sync", "metrics": metrics}
+    from .worker import rerender_compare_task
+    task = rerender_compare_task.delay(batch_id)
+    return {"batch_id": batch_id, "mode": "rerender-compare-async", "task_id": task.id}
 
 
 @app.post("/batches/{batch_id}/rerender-full")
-def rerender_full_endpoint(batch_id: str):
+def rerender_full_endpoint(batch_id: str, sync: bool = Query(False)):
     """Deep rerender: drop cached extracts, re-run normalize+extract+compare+enrich.
 
     Use when previously-uploaded documents need to pick up updated extract
     behaviour (e.g. HTML uploaded before normalize.py learned to convert
     text formats to canonical PDF). Preserves review_decisions via stable
     event_ids upsert.
+
+    By default dispatches asynchronously via Celery; pass sync=true for
+    small batches that complete within the HTTP timeout.
     """
     try:
         load_state(batch_id)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="batch not found")
-    from .pipeline import rerender_full
-    try:
-        metrics = rerender_full(batch_id)
-    except Exception as e:
-        logger.exception("rerender_full failed for %s", batch_id)
-        raise HTTPException(status_code=500, detail=f"rerender-full failed: {e}")
-    return {"batch_id": batch_id, "mode": "rerender-full", "metrics": metrics}
+    if sync:
+        from .pipeline import rerender_full
+        try:
+            metrics = rerender_full(batch_id)
+        except Exception as e:
+            logger.exception("rerender_full failed for %s", batch_id)
+            raise HTTPException(status_code=500, detail=f"rerender-full failed: {e}")
+        return {"batch_id": batch_id, "mode": "rerender-full-sync", "metrics": metrics}
+    from .worker import rerender_full_task
+    task = rerender_full_task.delay(batch_id)
+    return {"batch_id": batch_id, "mode": "rerender-full-async", "task_id": task.id}
 
 
 @app.get("/tasks/{task_id}")

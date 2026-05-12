@@ -62,6 +62,7 @@ header.topbar {
 .topbar .ext a { color: var(--mute); }
 @media (max-width: 700px) { .topbar .ext { font-size: 11px; gap: 8px; } }
 .dot-online { width: 8px; height: 8px; border-radius: 50%; background: var(--green); display: inline-block; box-shadow: 0 0 8px var(--green); }
+kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 3px; padding: 1px 6px; font-family: ui-monospace, monospace; font-size: 11.5px; }
 
 /* ------------------- layout ------------------- */
 main.app { padding: 28px 32px 64px; max-width: 1500px; margin: 0 auto; }
@@ -344,6 +345,7 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
   </div>
   <div class="ext">
     <span><span class="dot-online"></span> live</span>
+    <a href="#" onclick="document.getElementById('help-modal').hidden=false;return false" title="Горячие клавиши">⌨️ Горячие клавиши</a>
     <a href="/docs" target="_blank">API ↗</a>
     <a href="https://github.com/agisota/diffs" target="_blank">GitHub ↗</a>
   </div>
@@ -457,6 +459,28 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
   </section>
 
 </main>
+
+<div id="help-modal" hidden style="position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:80;display:flex;align-items:center;justify-content:center" onclick="if(event.target===this)this.hidden=true">
+  <div style="background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:24px 28px;max-width:520px;width:90%;box-shadow:var(--shadow)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h3 style="margin:0;font-size:16px">⌨️ Горячие клавиши</h3>
+      <button style="background:transparent;border:0;color:var(--mute);font-size:18px;cursor:pointer" onclick="document.getElementById('help-modal').hidden=true">✕</button>
+    </div>
+    <table style="width:100%;font-size:13px;border-collapse:collapse">
+      <tr><td colspan="2" style="padding:6px 0 4px;color:var(--mute);font-size:11px;text-transform:uppercase;letter-spacing:0.06em">В inline viewer</td></tr>
+      <tr><td style="padding:4px 12px 4px 0"><kbd>J</kbd></td><td>Следующее событие (pending → reviewed)</td></tr>
+      <tr><td style="padding:4px 12px 4px 0"><kbd>K</kbd></td><td>Предыдущее событие</td></tr>
+      <tr><td style="padding:4px 12px 4px 0"><kbd>A</kbd></td><td>Принять (Accept) активное событие</td></tr>
+      <tr><td style="padding:4px 12px 4px 0"><kbd>R</kbd></td><td>Отклонить (Reject) активное событие</td></tr>
+      <tr><td style="padding:4px 12px 4px 0"><kbd>+</kbd> / <kbd>−</kbd></td><td>Zoom in / out</td></tr>
+      <tr><td style="padding:4px 12px 4px 0"><kbd>0</kbd></td><td>Fit-to-width</td></tr>
+      <tr><td style="padding:4px 12px 4px 0"><kbd>Esc</kbd></td><td>Закрыть viewer</td></tr>
+      <tr><td colspan="2" style="padding:10px 0 4px;color:var(--mute);font-size:11px;text-transform:uppercase;letter-spacing:0.06em">Везде</td></tr>
+      <tr><td style="padding:4px 12px 4px 0"><kbd>?</kbd></td><td>Эта подсказка</td></tr>
+    </table>
+    <div style="margin-top:14px;color:var(--mute);font-size:11.5px">A/R автоматически прыгают к следующему pending событию. Принятые/отклонённые правки скрыты по умолчанию (галка «hide accepted/rejected» в sidebar).</div>
+  </div>
+</div>
 
 <div id="viewer-modal" class="viewer-modal" hidden>
   <div class="vm-head">
@@ -1097,39 +1121,50 @@ document.getElementById('btn-rerender').addEventListener('click', async () => {
     btn.disabled = false; btn.textContent = '↻ Rerender';
   }
 });
-document.getElementById('btn-rerender-compare').addEventListener('click', async () => {
+async function _runAsyncRerender(endpoint, label) {
   if (!currentBatchId) return;
-  if (!confirm('Запустить пересчёт сравнения для всех пар? Это применит последние фиксы pipeline (bbox, enrich) без re-upload. Существующие review_decisions сохранятся.')) return;
-  const btn = document.getElementById('btn-rerender-compare');
-  btn.disabled = true; const orig = btn.textContent; btn.textContent = '...пересчёт';
+  const confirmMsg = endpoint === 'rerender-compare'
+    ? 'Запустить пересчёт compare для всех пар? Это применит последние фиксы pipeline без re-upload. Review_decisions сохранятся.'
+    : 'Полный rerender: удалит кэшированные extract\'ы и пересоберёт всё заново. На больших батчах может занять минуты. Review_decisions сохранятся. Продолжить?';
+  if (!confirm(confirmMsg)) return;
+  const btn = document.getElementById('btn-' + endpoint);
+  const orig = btn.textContent;
+  btn.disabled = true; btn.textContent = '⏳ запуск…';
   try {
-    const r = await fetch(BASE + '/batches/' + currentBatchId + '/rerender-compare', { method: 'POST' }).then(r => r.json());
-    const m = r.metrics || {};
-    toast(`Compare пересчитан: ${m.pairs ?? 0} пар, ${m.events ?? 0} событий за ${m.time_to_report_sec ?? '?'}s`, 'success');
-    openBatch(currentBatchId);
+    const kicked = await fetch(BASE + '/batches/' + currentBatchId + '/' + endpoint, { method: 'POST' }).then(r => r.json());
+    const taskId = kicked.task_id;
+    if (!taskId) {
+      // sync mode fallback — already finished
+      const m = kicked.metrics || {};
+      toast(`${label} готов: ${m.pairs ?? 0} пар, ${m.events ?? 0} событий за ${m.time_to_report_sec ?? '?'}s`, 'success');
+      openBatch(currentBatchId);
+      return;
+    }
+    let pollDelay = 1500;
+    let elapsed = 0;
+    while (true) {
+      await new Promise(r => setTimeout(r, pollDelay));
+      elapsed += pollDelay / 1000;
+      btn.textContent = '⏳ ' + Math.round(elapsed) + 's';
+      const t = await fetch(BASE + '/tasks/' + taskId).then(r => r.json());
+      if (t.state === 'SUCCESS') {
+        const m = t.result || {};
+        toast(`${label} готов: ${m.pairs ?? 0} пар, ${m.events ?? 0} событий за ${m.time_to_report_sec ?? '?'}s`, 'success');
+        openBatch(currentBatchId);
+        break;
+      }
+      if (t.state === 'FAILURE') throw new Error(label + ' failed: ' + JSON.stringify(t.result));
+      pollDelay = Math.min(10000, pollDelay + 1000);
+    }
   } catch (e) {
-    toast('Пересчёт failed: ' + e.message, 'error');
+    toast(label + ' failed: ' + e.message, 'error');
   } finally {
     btn.disabled = false; btn.textContent = orig;
   }
-});
+}
 
-document.getElementById('btn-rerender-full').addEventListener('click', async () => {
-  if (!currentBatchId) return;
-  if (!confirm('Полный rerender: удалит кэшированные extract\'ы и пересоберёт всё заново (normalize → extract → compare → LLM → enrich). На больших батчах может занять несколько минут. Существующие review_decisions сохранятся. Продолжить?')) return;
-  const btn = document.getElementById('btn-rerender-full');
-  btn.disabled = true; const orig = btn.textContent; btn.textContent = '...полный rerender';
-  try {
-    const r = await fetch(BASE + '/batches/' + currentBatchId + '/rerender-full', { method: 'POST' }).then(r => r.json());
-    const m = r.metrics || {};
-    toast(`Полный rerender готов: ${m.pairs ?? 0} пар, ${m.events ?? 0} событий за ${m.time_to_report_sec ?? '?'}s`, 'success');
-    openBatch(currentBatchId);
-  } catch (e) {
-    toast('Полный rerender failed: ' + e.message, 'error');
-  } finally {
-    btn.disabled = false; btn.textContent = orig;
-  }
-});
+document.getElementById('btn-rerender-compare').addEventListener('click', () => _runAsyncRerender('rerender-compare', 'Compare'));
+document.getElementById('btn-rerender-full').addEventListener('click', () => _runAsyncRerender('rerender-full', 'Полный rerender'));
 
 // -------- inline viewer (M1) --------
 const viewerState = {
@@ -1453,6 +1488,29 @@ function showEventPopover(evId, anchorEl) {
 }
 
 document.getElementById('vm-close').addEventListener('click', closeInlineViewer);
+
+function _setupSyncScroll() {
+  const lhs = document.getElementById('vm-lhs-body');
+  const rhs = document.getElementById('vm-rhs-body');
+  if (!lhs || !rhs) return;
+  let lock = false;
+  const syncFrom = (src, dst) => () => {
+    if (lock) return;
+    lock = true;
+    const pct = src.scrollTop / Math.max(1, src.scrollHeight - src.clientHeight);
+    dst.scrollTop = pct * Math.max(1, dst.scrollHeight - dst.clientHeight);
+    setTimeout(() => { lock = false; }, 20);
+  };
+  lhs.addEventListener('scroll', syncFrom(lhs, rhs));
+  rhs.addEventListener('scroll', syncFrom(rhs, lhs));
+}
+// Wire on first viewer open (after panes exist):
+const _origOpenInlineViewer = openInlineViewer;
+window.openInlineViewer = async function(pairId) {
+  await _origOpenInlineViewer(pairId);
+  _setupSyncScroll();
+};
+
 document.addEventListener('keydown', e => {
   const modal = document.getElementById('viewer-modal');
   if (modal.hidden) return;
@@ -1468,14 +1526,23 @@ document.addEventListener('keydown', e => {
   if (e.key === '-' || e.key === '_') { e.preventDefault(); _viewerSetZoom(viewerState.zoom / 1.2); return; }
   if (e.key === '0') { e.preventDefault(); _viewerFitToWidth(); return; }
 });
+document.addEventListener('keydown', e => {
+  // Don't intercept ? when typing in inputs
+  const tag = (e.target && e.target.tagName || '').toUpperCase();
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  if (e.key === '?') { e.preventDefault(); document.getElementById('help-modal').hidden = false; }
+});
 
 function _viewerJumpRelative(delta) {
   // Skip accepted/rejected when hide-decided is on, otherwise iterate all.
   const hide = document.getElementById('vm-hide-decided')?.checked ?? true;
   const visible = viewerState.events.filter(e => !(hide && e.last_review && (e.last_review.decision === 'confirmed' || e.last_review.decision === 'rejected')));
   if (!visible.length) return;
-  // sort same way renderViewerSidebar does
+  // pending-first: events without last_review come before reviewed ones
   visible.sort((a, b) => {
+    const ap = a.last_review ? 1 : 0;
+    const bp = b.last_review ? 1 : 0;
+    if (ap !== bp) return ap - bp;
     const pa = (a.lhs?.page_no || a.lhs_page || 0), pb = (b.lhs?.page_no || b.lhs_page || 0);
     if (pa !== pb) return pa - pb;
     return (a.event_id || '').localeCompare(b.event_id || '');
