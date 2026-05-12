@@ -111,7 +111,14 @@ def suggest_for_event(
             method="POST",
         )
         with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
-            data: dict[str, Any] = json.loads(resp.read().decode("utf-8"))
+            raw = resp.read().decode("utf-8", errors="replace")
+        try:
+            data: dict[str, Any] = json.loads(raw)
+        except json.JSONDecodeError as je:
+            # Log first 500 chars of the actual response to help diagnose
+            # provider quirks (HTML error page, SSE stream, etc.).
+            logger.warning("ai_suggest: non-JSON response from %s: %r", api_base, raw[:500])
+            raise RuntimeError(f"LLM returned non-JSON ({len(raw)}B): {raw[:200]!r}") from je
     except urllib.error.HTTPError as e:
         body_text = ""
         try:
