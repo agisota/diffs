@@ -77,48 +77,27 @@ def delete_batch(batch_id: str):
         from .db import get_session
         from .db.models import (
             Batch, Document, DocumentVersion, PairRun, DiffEvent,
-            ReviewDecision, Artifact, AuditLog,
+            Artifact, AuditLog,
         )
         with get_session() as session:
-            # Batch existence check.
             batch_row = session.get(Batch, batch_id)
-            if batch_row is None:
-                # Already gone from DB but maybe still on disk — proceed
-                # to fs cleanup below.
-                pass
-            else:
-                # 1. Review decisions FOR events in pairs of this batch.
-                event_ids = list(session.scalars(
-                    select(DiffEvent.id)
-                    .join(PairRun, PairRun.id == DiffEvent.pair_run_id)
-                    .where(PairRun.batch_id == batch_id)
-                ).all())
-                if event_ids:
-                    session.execute(
-                        delete(ReviewDecision).where(ReviewDecision.diff_event_id.in_(event_ids))
-                    )
-                # 2. Diff events.
+            if batch_row is not None:
+                # DiffEvent CASCADEs ReviewDecision (FK ondelete=CASCADE),
+                # so deleting events takes reviews with them automatically.
                 pair_ids = list(session.scalars(
                     select(PairRun.id).where(PairRun.batch_id == batch_id)
                 ).all())
                 if pair_ids:
                     session.execute(delete(DiffEvent).where(DiffEvent.pair_run_id.in_(pair_ids)))
-                # 3. Pair runs (this releases the RESTRICT on document_versions).
+                # Pair runs MUST go before document_versions because of the
+                # RESTRICT FK on pair_runs.{lhs,rhs}_document_version_id.
                 session.execute(delete(PairRun).where(PairRun.batch_id == batch_id))
-                # 4. Artifacts + audit_log.
                 session.execute(delete(Artifact).where(Artifact.batch_id == batch_id))
                 session.execute(delete(AuditLog).where(AuditLog.batch_id == batch_id))
-                # 5. Document versions (now safe — no pair_runs reference them).
-                doc_ids = list(session.scalars(
-                    select(Document.id).where(Document.batch_id == batch_id)
-                ).all())
-                if doc_ids:
-                    session.execute(
-                        delete(DocumentVersion).where(DocumentVersion.document_id.in_(doc_ids))
-                    )
-                # 6. Documents.
+                # DocumentVersion has its own batch_id, no need to fetch
+                # document_ids — delete by batch_id directly.
+                session.execute(delete(DocumentVersion).where(DocumentVersion.batch_id == batch_id))
                 session.execute(delete(Document).where(Document.batch_id == batch_id))
-                # 7. Finally, the batch row.
                 session.delete(batch_row)
                 session.flush()
     except Exception as e:
