@@ -349,6 +349,15 @@ def run_all_pairs(
             except Exception as e:
                 logger.warning("claim_validation failed for pair %s: %s", pair.get("pair_id"), e)
 
+        # M3: best-effort position enrichment for LLM events that arrived
+        # without bbox/page/block_id (llm_pair_diff.py:280-293). Fuzzy-matches
+        # the quote against extract blocks; only fills in when ratio >= 85.
+        try:
+            from .enrich_positions import enrich_llm_events
+            enrich_llm_events(events, lhs_blocks, rhs_blocks)
+        except Exception as e:
+            logger.warning("enrich_llm_events failed for pair %s: %s", pair.get("pair_id"), e)
+
         pair_dir = base / "pairs" / pair["pair_id"]
         pair_dir.mkdir(parents=True, exist_ok=True)
         write_jsonl(pair_dir / "diff_events.jsonl", events)

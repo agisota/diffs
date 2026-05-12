@@ -609,6 +609,31 @@ class BatchRepository:
             ).all()
             return [_review_to_dict(r) for r in rows]
 
+    def list_reviews_for_batch(self, batch_id: str) -> dict[str, dict]:
+        """Return {event_id: latest_review_dict} for all events of the batch.
+
+        Batched alternative to calling list_event_reviews per event from the
+        API layer (avoids N+1 when rendering the batch detail page).
+        """
+        try:
+            with get_session() as session:
+                rows = session.scalars(
+                    select(ReviewDecision)
+                    .join(DiffEvent, ReviewDecision.event_id == DiffEvent.id)
+                    .join(PairRun, DiffEvent.pair_run_id == PairRun.id)
+                    .where(PairRun.batch_id == batch_id)
+                    .order_by(ReviewDecision.decided_at.desc())
+                ).all()
+        except Exception as e:
+            import logging as _logging
+            _logging.getLogger(__name__).warning("list_reviews_for_batch failed: %s", e)
+            return {}
+        latest: dict[str, dict] = {}
+        for r in rows:
+            if r.event_id and r.event_id not in latest:
+                latest[r.event_id] = _review_to_dict(r)
+        return latest
+
     # ==================================================================
     # PR-4.6: audit log
     # ==================================================================

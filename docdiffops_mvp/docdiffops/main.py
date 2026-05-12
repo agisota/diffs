@@ -58,9 +58,23 @@ def create_batch_endpoint(req: CreateBatchRequest):
 @app.get("/batches/{batch_id}")
 def get_batch(batch_id: str):
     try:
-        return load_state(batch_id)
+        state = load_state(batch_id)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="batch not found")
+    # M3: enrich each event with its latest review decision (batched, no N+1).
+    from .state import _get_repo
+    repo = _get_repo()
+    if repo is not None:
+        try:
+            latest = repo.list_reviews_for_batch(batch_id)
+            for e in (state.get("diff_events") or []):
+                eid = e.get("event_id")
+                if eid and eid in latest:
+                    e["last_review"] = latest[eid]
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning("list_reviews_for_batch enrich failed: %s", exc)
+    return state
 
 
 @app.post("/batches/{batch_id}/documents")

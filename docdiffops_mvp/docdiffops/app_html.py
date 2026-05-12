@@ -288,6 +288,27 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
 .viewer-event-row .ev-pages { grid-row: 1; grid-column: 2; color: var(--mute); font-size: 11px; text-align: right; font-family: ui-monospace, monospace; }
 .viewer-event-row .ev-quote { grid-row: 2; grid-column: 1 / -1; color: var(--mute); font-size: 12px; line-height: 1.4; max-height: 3em; overflow: hidden; }
 .viewer-event-row .ev-id { grid-row: 3; grid-column: 1 / -1; color: var(--mute); font-family: ui-monospace, monospace; font-size: 10.5px; }
+
+.viewer-modal .ev-popover {
+  position: fixed; z-index: 70; background: var(--panel); border: 1px solid var(--blue);
+  border-radius: 6px; padding: 12px 14px; box-shadow: var(--shadow);
+  min-width: 280px; max-width: 380px;
+}
+.viewer-modal .ev-popover .pop-head {
+  display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;
+  font-size: 11px; color: var(--mute); text-transform: uppercase; letter-spacing: 0.05em;
+}
+.viewer-modal .ev-popover .pop-close { background: transparent; border: 0; color: var(--mute); cursor: pointer; font-size: 14px; }
+.viewer-modal .ev-popover .pop-body { font-size: 12.5px; line-height: 1.5; }
+.viewer-modal .ev-popover .pop-body .quote { background: var(--bg); border-left: 3px solid var(--gray); padding: 6px 10px; margin: 6px 0; border-radius: 3px; max-height: 5em; overflow: auto; font-size: 12px; }
+.viewer-modal .ev-popover .pop-body .quote.lhs { border-left-color: var(--red); }
+.viewer-modal .ev-popover .pop-body .quote.rhs { border-left-color: var(--green); }
+.viewer-modal .ev-popover textarea { width: 100%; background: var(--panel-2); border: 1px solid var(--line); color: var(--fg); padding: 6px 8px; border-radius: 4px; font-size: 12px; margin-top: 6px; resize: vertical; min-height: 50px; }
+.viewer-modal .ev-popover .pop-actions { display: flex; gap: 8px; margin-top: 10px; }
+.viewer-modal .ev-popover button.accept { background: rgba(46,194,126,0.2); border: 1px solid var(--green); color: var(--green); padding: 6px 14px; border-radius: 5px; font-size: 12px; font-weight: 600; flex: 1; }
+.viewer-modal .ev-popover button.reject { background: rgba(229,72,77,0.18); border: 1px solid var(--red); color: var(--red); padding: 6px 14px; border-radius: 5px; font-size: 12px; font-weight: 600; flex: 1; }
+.viewer-modal .ev-popover button:disabled { opacity: 0.4; cursor: wait; }
+.viewer-modal .ev-popover .pop-prev { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); font-size: 11.5px; color: var(--mute); }
 </style>
 </head>
 <body>
@@ -383,7 +404,7 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
         <span class="count" id="evt-count"></span>
       </div>
       <table class="evt-table" id="evt-table">
-        <thead><tr><th style="width:90px">event</th><th style="width:100px">status</th><th style="width:90px">severity</th><th style="width:60px">conf</th><th>LHS quote</th><th>RHS quote</th></tr></thead>
+        <thead><tr><th style="width:90px">event</th><th style="width:100px">status</th><th style="width:90px">severity</th><th style="width:60px">conf</th><th style="width:110px">decision</th><th>LHS quote</th><th>RHS quote</th></tr></thead>
         <tbody id="evt-tbody"></tbody>
       </table>
     </div>
@@ -442,10 +463,16 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
     </div>
     <div class="vm-sidebar">
       <div class="vs-head">&#1057;&#1086;&#1073;&#1099;&#1090;&#1080;&#1103; <span id="vm-events-count" class="mono"></span></div>
-      <div class="vs-filter"><input id="vm-filter" placeholder="Filter quote/status&#8230;"></div>
+      <div class="vs-filter">
+        <input id="vm-filter" placeholder="Filter quote/status&#8230;">
+        <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11.5px;color:var(--mute);cursor:pointer">
+          <input type="checkbox" id="vm-hide-decided" checked> hide accepted/rejected
+        </label>
+      </div>
       <div class="vs-list" id="vm-events-list"></div>
     </div>
   </div>
+  <div id="ev-popover" class="ev-popover" hidden></div>
 </div>
 
 <div class="toast-wrap" id="toast-wrap"></div>
@@ -738,6 +765,7 @@ function applyEventsFilter() {
       <td><span class='chip chip-${escapeHtml(statC)}'>${escapeHtml(statC)}</span></td>
       <td><span class='chip chip-${escapeHtml(sevC)}'>${escapeHtml(sevC)}</span></td>
       <td class='mono'>${e.confidence == null ? '—' : (typeof e.confidence === 'number' ? e.confidence.toFixed(2) : escapeHtml(e.confidence))}</td>
+      <td>${e.last_review ? `<span class='chip chip-${escapeHtml((e.last_review.decision||'').replace(/_/g,'-'))}' title='${escapeHtml((e.last_review.reviewer_name||'?') + ' · ' + (e.last_review.decided_at||''))}'>${escapeHtml(e.last_review.decision||'')}</span>` : `<span class='muted' style='font-size:11px'>—</span>`}</td>
       <td class='muted' style='max-width:340px;overflow:hidden;text-overflow:ellipsis'>${highlight(e.lhs?.quote, q)}</td>
       <td class='muted' style='max-width:340px;overflow:hidden;text-overflow:ellipsis'>${highlight(e.rhs?.quote, q)}</td>
     `;
@@ -767,7 +795,7 @@ function toggleEventRow(tr, e) {
   const lhs = e.lhs || {}, rhs = e.rhs || {};
   const reviewerName = localStorage.getItem('docdiff:reviewer') || '';
   dr.innerHTML = `
-    <td colspan='6' class='evt-detail'><div class='inner'>
+    <td colspan='7' class='evt-detail'><div class='inner'>
       <div style='display:grid;grid-template-columns:120px 1fr;gap:6px 14px;font-size:13px'>
         <div class='muted'>event_id</div><div class='mono'>${escapeHtml(e.event_id || '')}</div>
         <div class='muted'>pair_id</div><div class='mono'>${escapeHtml(e.pair_id || '')}</div>
@@ -1113,6 +1141,7 @@ function renderViewerSidebar(filterQ) {
   const list = document.getElementById('vm-events-list');
   const cnt = document.getElementById('vm-events-count');
   const q = (filterQ || '').toLowerCase();
+  const hideDecided = document.getElementById('vm-hide-decided')?.checked ?? true;
   const sorted = viewerState.events.slice().sort((a, b) => {
     const pa = (a.lhs && a.lhs.page_no || a.lhs_page || 0), pb = (b.lhs && b.lhs.page_no || b.lhs_page || 0);
     if (pa !== pb) return pa - pb;
@@ -1121,6 +1150,7 @@ function renderViewerSidebar(filterQ) {
   let shown = 0;
   list.innerHTML = '';
   for (const e of sorted) {
+    if (hideDecided && e.last_review && (e.last_review.decision === 'confirmed' || e.last_review.decision === 'rejected')) continue;
     if (q) {
       const blob = ((e.lhs && e.lhs.quote || '') + ' ' + (e.rhs && e.rhs.quote || '') + ' ' + (e.status || '') + ' ' + (e.event_id || '')).toLowerCase();
       if (blob.indexOf(q) < 0) continue;
@@ -1132,11 +1162,18 @@ function renderViewerSidebar(filterQ) {
     const rp = (e.rhs && e.rhs.page_no || e.rhs_page || '?');
     const stat = (e.status || '').toLowerCase();
     const quote = (e.lhs && e.lhs.quote || e.rhs && e.rhs.quote || '').slice(0, 160);
+    const lrChip = e.last_review ?
+      '<span class="chip chip-' + escapeHtml((e.last_review.decision||'').replace(/_/g,'-')) + '" style="font-size:9.5px">' + escapeHtml(e.last_review.decision||'') + '</span>' :
+      '<button class="pill-link review-btn" data-evid="' + escapeHtml(e.event_id) + '" style="padding:1px 6px;font-size:10px">&#9889; review</button>';
     row.innerHTML = '<span class="ev-chip chip chip-' + escapeHtml(stat) + '">' + escapeHtml(stat) + '</span>' +
                     '<span class="ev-pages">L p.' + escapeHtml(String(lp)) + ' · R p.' + escapeHtml(String(rp)) + '</span>' +
                     '<div class="ev-quote">' + escapeHtml(quote) + (quote.length >= 160 ? '…' : '') + '</div>' +
-                    '<div class="ev-id">' + escapeHtml((e.event_id || '').slice(-12)) + '</div>';
+                    '<div class="ev-id">' + escapeHtml((e.event_id || '').slice(-12)) + ' ' + lrChip + '</div>';
     row.addEventListener('click', () => jumpToEvent(e.event_id));
+    const rbtn = row.querySelector('button.review-btn');
+    if (rbtn) {
+      rbtn.addEventListener('click', ev => { ev.stopPropagation(); showEventPopover(e.event_id, rbtn); });
+    }
     list.appendChild(row);
     shown++;
   }
@@ -1170,6 +1207,61 @@ function closeInlineViewer() {
   viewerState.events = []; viewerState.activeEventId = null;
 }
 
+function showEventPopover(evId, anchorEl) {
+  const e = viewerState.events.find(x => x.event_id === evId);
+  if (!e) return;
+  const pop = document.getElementById('ev-popover');
+  const rect = anchorEl.getBoundingClientRect();
+  pop.style.left = Math.min(window.innerWidth - 400, rect.right + 8) + 'px';
+  pop.style.top = Math.min(window.innerHeight - 260, rect.top) + 'px';
+  const lr = e.last_review;
+  pop.innerHTML = `
+    <div class="pop-head">
+      <span>Event · <span class="chip chip-${escapeHtml((e.status||'').toLowerCase())}">${escapeHtml(e.status||'?')}</span></span>
+      <button class="pop-close" aria-label="close">&#10005;</button>
+    </div>
+    <div class="pop-body">
+      ${e.lhs?.quote ? `<div class="quote lhs">${escapeHtml(e.lhs.quote.slice(0,300))}${e.lhs.quote.length>300?'…':''}</div>` : ''}
+      ${e.rhs?.quote ? `<div class="quote rhs">${escapeHtml(e.rhs.quote.slice(0,300))}${e.rhs.quote.length>300?'…':''}</div>` : ''}
+      ${e.explanation_short ? `<div style="font-style:italic;color:var(--mute);margin:6px 0">${escapeHtml(e.explanation_short)}</div>` : ''}
+      <textarea placeholder="Comment (optional)"></textarea>
+      <div class="pop-actions">
+        <button class="accept">&#10003; Accept</button>
+        <button class="reject">&#10007; Reject</button>
+      </div>
+      ${lr ? `<div class="pop-prev">Last: <span class="chip chip-${escapeHtml((lr.decision||'').replace(/_/g,'-'))}">${escapeHtml(lr.decision||'')}</span> by ${escapeHtml(lr.reviewer_name||'?')} · ${escapeHtml(lr.decided_at||'')}</div>` : ''}
+    </div>
+  `;
+  pop.hidden = false;
+  pop.querySelector('.pop-close').addEventListener('click', () => { pop.hidden = true; });
+  const submit = async (decision) => {
+    const name = localStorage.getItem('docdiff:reviewer') || prompt('Your name (saved for next time):', '') || 'anonymous';
+    localStorage.setItem('docdiff:reviewer', name);
+    const comment = pop.querySelector('textarea').value;
+    const btns = pop.querySelectorAll('button');
+    btns.forEach(b => b.disabled = true);
+    try {
+      const r = await fetch(BASE + '/events/' + evId + '/review', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({decision, reviewer_name: name, comment})
+      }).then(r => r.json());
+      const latest = (r.history || [])[0] || {decision, reviewer_name: name, decided_at: new Date().toISOString(), comment};
+      e.last_review = latest;
+      const evCacheItem = (eventsCache || []).find(x => x.event_id === evId);
+      if (evCacheItem) evCacheItem.last_review = latest;
+      toast(`Review saved: ${decision}`, 'success');
+      pop.hidden = true;
+      renderViewerSidebar(document.getElementById('vm-filter').value);
+    } catch (err) {
+      toast('Review failed: ' + err.message, 'error');
+      btns.forEach(b => b.disabled = false);
+    }
+  };
+  pop.querySelector('button.accept').addEventListener('click', () => submit('confirmed'));
+  pop.querySelector('button.reject').addEventListener('click', () => submit('rejected'));
+}
+
 document.getElementById('vm-close').addEventListener('click', closeInlineViewer);
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && !document.getElementById('viewer-modal').hidden) closeInlineViewer();
@@ -1183,6 +1275,7 @@ document.querySelectorAll('#vm-pager-lhs button, #vm-pager-rhs button').forEach(
   });
 });
 document.getElementById('vm-filter').addEventListener('input', e => renderViewerSidebar(e.target.value));
+document.getElementById('vm-hide-decided').addEventListener('change', () => renderViewerSidebar(document.getElementById('vm-filter').value));
 
 // -------- topic clusters (cross-pair dedup) --------
 async function loadTopics(batchId) {
