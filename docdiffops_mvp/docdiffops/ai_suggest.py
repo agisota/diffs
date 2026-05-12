@@ -13,7 +13,8 @@ import logging
 import os
 from typing import Any
 
-import httpx
+import urllib.error
+import urllib.request
 
 logger = logging.getLogger(__name__)
 
@@ -103,11 +104,22 @@ def suggest_for_event(
         "Content-Type": "application/json",
     }
     try:
-        with httpx.Client(timeout=_TIMEOUT) as cli:
-            r = cli.post(f"{api_base}/chat/completions", json=body, headers=headers)
-            r.raise_for_status()
-            data: dict[str, Any] = r.json()
-    except httpx.HTTPError as e:
+        req = urllib.request.Request(
+            f"{api_base}/chat/completions",
+            data=json.dumps(body).encode("utf-8"),
+            headers=headers,
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
+            data: dict[str, Any] = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        body_text = ""
+        try:
+            body_text = e.read().decode("utf-8", errors="ignore")[:500]
+        except Exception:
+            pass
+        raise RuntimeError(f"LLM HTTP {e.code}: {body_text}") from e
+    except urllib.error.URLError as e:
         raise RuntimeError(f"LLM transport error: {e}") from e
 
     try:
