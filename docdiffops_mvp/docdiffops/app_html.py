@@ -12,6 +12,14 @@ APP_HTML = r"""<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>DocDiffOps</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.min.js"></script>
+<script>
+  // pdf.js worker must be configured before any getDocument call.
+  if (window.pdfjsLib) {
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.js';
+  }
+</script>
 <style>
 :root {
   --bg: #0b0d12; --panel: #11141b; --panel-2: #161a22; --line: #1f2632;
@@ -213,6 +221,73 @@ main.app { padding: 28px 32px 64px; max-width: 1500px; margin: 0 auto; }
 .viewer-pane .empty-frame { color: var(--mute); padding: 40px; text-align: center; font-style: italic; font-size: 13px; }
 
 mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
+
+/* ------------------- inline viewer modal (M1) ------------------- */
+.viewer-modal { position: fixed; inset: 0; background: var(--bg); z-index: 60; display: flex; flex-direction: column; }
+.viewer-modal[hidden] { display: none; }
+.viewer-modal .vm-head {
+  display: flex; align-items: center; gap: 16px; padding: 10px 18px;
+  background: var(--panel); border-bottom: 1px solid var(--line); flex-shrink: 0;
+}
+.viewer-modal .vm-head h3 { margin: 0; font-size: 14px; font-weight: 600; }
+.viewer-modal .vm-head .pair-id { color: var(--mute); font-family: ui-monospace, monospace; font-size: 11.5px; }
+.viewer-modal .vm-head .spacer { flex: 1; }
+.viewer-modal .vm-head .vm-pager { display: flex; align-items: center; gap: 6px; color: var(--mute); font-size: 12px; }
+.viewer-modal .vm-head .vm-pager button { background: var(--panel-2); border: 1px solid var(--line); color: var(--fg); padding: 3px 10px; border-radius: 4px; font-size: 12px; }
+.viewer-modal .vm-head .vm-pager button:disabled { opacity: 0.4; cursor: not-allowed; }
+.viewer-modal .vm-close { background: transparent; border: 1px solid var(--line); color: var(--mute); padding: 5px 12px; border-radius: 5px; font-size: 13px; }
+.viewer-modal .vm-close:hover { color: var(--red); border-color: var(--red); }
+
+.viewer-modal .vm-body {
+  flex: 1; min-height: 0; display: grid;
+  grid-template-columns: 1fr 1fr 320px; gap: 1px; background: var(--line);
+}
+.viewer-modal .vm-pane { background: var(--panel); display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.viewer-modal .vm-pane .vp-head {
+  padding: 6px 12px; border-bottom: 1px solid var(--line);
+  background: var(--panel-2); font-size: 12px; font-weight: 600;
+  display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+}
+.viewer-modal .vm-pane .vp-head .side {
+  display: inline-block; padding: 1px 8px; border-radius: 3px; font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase;
+}
+.viewer-modal .vm-pane .vp-head .side.lhs { background: rgba(229,72,77,0.18); color: var(--red); }
+.viewer-modal .vm-pane .vp-head .side.rhs { background: rgba(46,194,126,0.18); color: var(--green); }
+.viewer-modal .vm-pane .vp-head .fname { color: var(--fg); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
+.viewer-modal .vm-pane .vp-body { flex: 1; min-height: 0; overflow: auto; padding: 16px; display: flex; flex-direction: column; align-items: center; gap: 16px; background: #1a1d24; }
+.viewer-modal .vm-pane .vp-loading { color: var(--mute); padding: 40px; font-size: 13px; font-style: italic; }
+.viewer-modal .vm-pane .vp-error { color: var(--red); padding: 40px; font-size: 13px; }
+
+.pdf-page-wrap { position: relative; box-shadow: 0 2px 12px rgba(0,0,0,0.4); }
+.pdf-page-wrap canvas { display: block; }
+.pdf-page-wrap .pdf-overlay { position: absolute; inset: 0; pointer-events: none; }
+.pdf-page-wrap .pdf-page-num { position: absolute; top: -22px; left: 0; color: var(--mute); font-size: 11px; font-family: ui-monospace, monospace; }
+.bbox-hi { position: absolute; border-radius: 2px; pointer-events: auto; cursor: pointer; transition: box-shadow 0.15s ease; }
+.bbox-hi:hover, .bbox-hi.is-active { box-shadow: 0 0 0 2px var(--blue), 0 0 12px rgba(76,195,255,0.5); }
+.bbox-hi-added { background: rgba(46,194,126,0.22); border: 1px solid rgba(46,194,126,0.7); }
+.bbox-hi-deleted { background: rgba(229,72,77,0.22); border: 1px solid rgba(229,72,77,0.7); }
+.bbox-hi-modified, .bbox-hi-partial { background: rgba(255,178,36,0.22); border: 1px solid rgba(255,178,36,0.7); }
+.bbox-hi-contradicts, .bbox-hi-manual_review { background: rgba(229,72,77,0.30); border: 1px solid var(--red); }
+.bbox-hi-same { background: rgba(46,194,126,0.08); border: 1px dashed rgba(46,194,126,0.5); }
+
+.viewer-modal .vm-sidebar { background: var(--panel); display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.viewer-modal .vm-sidebar .vs-head {
+  padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--panel-2);
+  font-size: 11.5px; color: var(--mute); text-transform: uppercase; letter-spacing: 0.06em; flex-shrink: 0;
+}
+.viewer-modal .vm-sidebar .vs-filter { padding: 8px 10px; border-bottom: 1px solid var(--line); }
+.viewer-modal .vm-sidebar .vs-filter input { width: 100%; background: var(--panel-2); border: 1px solid var(--line); color: var(--fg); padding: 5px 8px; border-radius: 4px; font-size: 12.5px; }
+.viewer-modal .vm-sidebar .vs-list { flex: 1; min-height: 0; overflow: auto; }
+.viewer-event-row {
+  padding: 8px 10px; border-bottom: 1px solid var(--line); cursor: pointer; font-size: 12.5px;
+  display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: start;
+}
+.viewer-event-row:hover { background: var(--panel-2); }
+.viewer-event-row.is-active { background: rgba(76,195,255,0.10); border-left: 3px solid var(--blue); padding-left: 7px; }
+.viewer-event-row .ev-chip { grid-row: 1; grid-column: 1; }
+.viewer-event-row .ev-pages { grid-row: 1; grid-column: 2; color: var(--mute); font-size: 11px; text-align: right; font-family: ui-monospace, monospace; }
+.viewer-event-row .ev-quote { grid-row: 2; grid-column: 1 / -1; color: var(--mute); font-size: 12px; line-height: 1.4; max-height: 3em; overflow: hidden; }
+.viewer-event-row .ev-id { grid-row: 3; grid-column: 1 / -1; color: var(--mute); font-family: ui-monospace, monospace; font-size: 10.5px; }
 </style>
 </head>
 <body>
@@ -336,6 +411,42 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
   </section>
 
 </main>
+
+<div id="viewer-modal" class="viewer-modal" hidden>
+  <div class="vm-head">
+    <h3>&#128366; Inline viewer</h3>
+    <span class="pair-id" id="vm-pair-id"></span>
+    <div class="spacer"></div>
+    <div class="vm-pager" id="vm-pager-lhs">
+      <span>LHS</span>
+      <button data-side="lhs" data-dir="-1">&#9664;</button>
+      <span><span id="vm-page-lhs">1</span> / <span id="vm-pages-lhs">?</span></span>
+      <button data-side="lhs" data-dir="1">&#9654;</button>
+    </div>
+    <div class="vm-pager" id="vm-pager-rhs">
+      <span>RHS</span>
+      <button data-side="rhs" data-dir="-1">&#9664;</button>
+      <span><span id="vm-page-rhs">1</span> / <span id="vm-pages-rhs">?</span></span>
+      <button data-side="rhs" data-dir="1">&#9654;</button>
+    </div>
+    <button class="vm-close" id="vm-close">Close &#10005;</button>
+  </div>
+  <div class="vm-body">
+    <div class="vm-pane">
+      <div class="vp-head"><span class="side lhs">LHS</span><span class="fname" id="vm-lhs-name">&#8212;</span></div>
+      <div class="vp-body" id="vm-lhs-body"><div class="vp-loading">Loading&#8230;</div></div>
+    </div>
+    <div class="vm-pane">
+      <div class="vp-head"><span class="side rhs">RHS</span><span class="fname" id="vm-rhs-name">&#8212;</span></div>
+      <div class="vp-body" id="vm-rhs-body"><div class="vp-loading">Loading&#8230;</div></div>
+    </div>
+    <div class="vm-sidebar">
+      <div class="vs-head">&#1057;&#1086;&#1073;&#1099;&#1090;&#1080;&#1103; <span id="vm-events-count" class="mono"></span></div>
+      <div class="vs-filter"><input id="vm-filter" placeholder="Filter quote/status&#8230;"></div>
+      <div class="vs-list" id="vm-events-list"></div>
+    </div>
+  </div>
+</div>
 
 <div class="toast-wrap" id="toast-wrap"></div>
 
@@ -793,6 +904,7 @@ function renderPairs(s) {
       </div>
       <div class='links'>
         ${pairArts.map(a => `<a class='pill-link' href='${BASE}/batches/${currentBatchId}/download/${escapeHtml(a.path)}' target='_blank'>${escapeHtml(a.type || 'download')} ↓</a>`).join('')}
+        ${pairArts.some(a => /(?:^|\/)pairs\/[^/]+\/(?:pagewise_redgreen|lhs_red|rhs_green)\.pdf$/.test(a.path||'')) ? `<button class='pill-link' data-viewer-pair='${escapeHtml(p.pair_id)}' style='background:rgba(76,195,255,0.12);border-color:var(--blue-dim);color:var(--blue)'>&#128366; inline viewer</button>` : ''}
         <button class='pill-link' data-pair='${escapeHtml(p.pair_id)}'>view events →</button>
       </div>
     `;
@@ -801,6 +913,8 @@ function renderPairs(s) {
       document.querySelector('.tab-line[data-detail-tab="events"]').click();
       applyEventsFilter();
     });
+    const viewerBtn = card.querySelector('button[data-viewer-pair]');
+    if (viewerBtn) viewerBtn.addEventListener('click', () => openInlineViewer(p.pair_id));
     list.appendChild(card);
   }
 }
@@ -856,6 +970,203 @@ document.getElementById('btn-rerender').addEventListener('click', async () => {
     btn.disabled = false; btn.textContent = '↻ Rerender';
   }
 });
+
+// -------- inline viewer (M1) --------
+const viewerState = {
+  pairId: null,
+  lhsPdf: null,
+  rhsPdf: null,
+  lhsPage: 1,
+  rhsPage: 1,
+  events: [],
+  activeEventId: null,
+};
+
+function _pairArtifactPath(state, pairId, basename) {
+  const arts = state && state.artifacts || [];
+  for (const a of arts) {
+    if (!a || !a.path) continue;
+    if (a.path.endsWith('/' + basename) && a.path.includes(pairId)) return a.path;
+  }
+  return null;
+}
+
+async function _loadPdfFromArtifact(pairId, basename) {
+  if (!detailState) return null;
+  const p = _pairArtifactPath(detailState, pairId, basename);
+  if (!p) return null;
+  const url = BASE + '/batches/' + currentBatchId + '/download/' + p;
+  return await pdfjsLib.getDocument({url}).promise;
+}
+
+async function openInlineViewer(pairId) {
+  if (!window.pdfjsLib) { toast('pdf.js not loaded', 'error'); return; }
+  const modal = document.getElementById('viewer-modal');
+  modal.hidden = false;
+  document.body.style.overflow = 'hidden';
+  viewerState.pairId = pairId;
+  viewerState.lhsPage = 1; viewerState.rhsPage = 1;
+  viewerState.activeEventId = null;
+  document.getElementById('vm-pair-id').textContent = pairId;
+  const pair = (detailState.pair_runs || detailState.pairs || []).find(x => x.pair_id === pairId) || {};
+  const docs = (detailState.documents || []).reduce((m, d) => (m[d.doc_id] = d, m), {});
+  document.getElementById('vm-lhs-name').textContent = (docs[pair.lhs_doc_id] || {}).filename || pair.lhs_doc_id || '?';
+  document.getElementById('vm-rhs-name').textContent = (docs[pair.rhs_doc_id] || {}).filename || pair.rhs_doc_id || '?';
+  document.getElementById('vm-lhs-body').innerHTML = "<div class='vp-loading'>Loading LHS PDF…</div>";
+  document.getElementById('vm-rhs-body').innerHTML = "<div class='vp-loading'>Loading RHS PDF…</div>";
+  viewerState.events = (detailState.diff_events || []).filter(e => e.pair_id === pairId);
+  renderViewerSidebar('');
+  try {
+    const [lhs, rhs] = await Promise.all([
+      _loadPdfFromArtifact(pairId, 'lhs_red.pdf').catch(() => null),
+      _loadPdfFromArtifact(pairId, 'rhs_green.pdf').catch(() => null),
+    ]);
+    viewerState.lhsPdf = lhs;
+    viewerState.rhsPdf = rhs;
+    if (!lhs && !rhs) {
+      document.getElementById('vm-lhs-body').innerHTML = "<div class='vp-error'>No annotated PDF artifacts for this pair.</div>";
+      document.getElementById('vm-rhs-body').innerHTML = "";
+      return;
+    }
+    if (lhs) {
+      document.getElementById('vm-pages-lhs').textContent = lhs.numPages;
+      await renderPdfPage('lhs', 1);
+    } else {
+      document.getElementById('vm-lhs-body').innerHTML = "<div class='vp-error'>LHS PDF not available.</div>";
+    }
+    if (rhs) {
+      document.getElementById('vm-pages-rhs').textContent = rhs.numPages;
+      await renderPdfPage('rhs', 1);
+    } else {
+      document.getElementById('vm-rhs-body').innerHTML = "<div class='vp-error'>RHS PDF not available.</div>";
+    }
+  } catch (e) {
+    toast('Viewer error: ' + e.message, 'error');
+  }
+}
+
+async function renderPdfPage(side, pageNo) {
+  const pdf = side === 'lhs' ? viewerState.lhsPdf : viewerState.rhsPdf;
+  if (!pdf) return;
+  pageNo = Math.max(1, Math.min(pdf.numPages, pageNo));
+  if (side === 'lhs') viewerState.lhsPage = pageNo; else viewerState.rhsPage = pageNo;
+  document.getElementById('vm-page-' + side).textContent = pageNo;
+  const body = document.getElementById('vm-' + side + '-body');
+  const page = await pdf.getPage(pageNo);
+  const viewport = page.getViewport({scale: 1.4});
+  const wrap = document.createElement('div'); wrap.className = 'pdf-page-wrap';
+  const num = document.createElement('div'); num.className = 'pdf-page-num'; num.textContent = 'p.' + pageNo + ' / ' + pdf.numPages;
+  wrap.appendChild(num);
+  const canvas = document.createElement('canvas');
+  canvas.width = viewport.width; canvas.height = viewport.height;
+  wrap.appendChild(canvas);
+  const overlay = document.createElement('div'); overlay.className = 'pdf-overlay';
+  overlay.style.width = viewport.width + 'px'; overlay.style.height = viewport.height + 'px';
+  wrap.appendChild(overlay);
+  body.innerHTML = ''; body.appendChild(wrap);
+  await page.render({canvasContext: canvas.getContext('2d'), viewport}).promise;
+  drawBboxOverlay(side, pageNo, overlay, viewport);
+}
+
+function drawBboxOverlay(side, pageNo, overlay, viewport) {
+  const evs = viewerState.events.filter(e => {
+    const p = side === 'lhs' ? (e.lhs && e.lhs.page_no || e.lhs_page) : (e.rhs && e.rhs.page_no || e.rhs_page);
+    return p === pageNo;
+  });
+  for (const e of evs) {
+    const bbox = side === 'lhs' ? (e.lhs && e.lhs.bbox || e.lhs_bbox) : (e.rhs && e.rhs.bbox || e.rhs_bbox);
+    if (!bbox || bbox.length < 4) continue;
+    const [x0, y0, x1, y1] = bbox;
+    const [vx0, vy0] = viewport.convertToViewportPoint(x0, y0);
+    const [vx1, vy1] = viewport.convertToViewportPoint(x1, y1);
+    const left = Math.min(vx0, vx1), top = Math.min(vy0, vy1);
+    const width = Math.abs(vx1 - vx0), height = Math.abs(vy1 - vy0);
+    const div = document.createElement('div');
+    div.className = 'bbox-hi bbox-hi-' + (e.status || 'same');
+    div.style.left = left + 'px'; div.style.top = top + 'px';
+    div.style.width = width + 'px'; div.style.height = height + 'px';
+    div.dataset.evid = e.event_id;
+    div.title = (e.status || '?') + ' · ' + (e.severity || 'low') + (e.explanation_short ? ' — ' + e.explanation_short : '');
+    if (e.event_id === viewerState.activeEventId) div.classList.add('is-active');
+    div.addEventListener('click', () => jumpToEvent(e.event_id));
+    overlay.appendChild(div);
+  }
+}
+
+function renderViewerSidebar(filterQ) {
+  const list = document.getElementById('vm-events-list');
+  const cnt = document.getElementById('vm-events-count');
+  const q = (filterQ || '').toLowerCase();
+  const sorted = viewerState.events.slice().sort((a, b) => {
+    const pa = (a.lhs && a.lhs.page_no || a.lhs_page || 0), pb = (b.lhs && b.lhs.page_no || b.lhs_page || 0);
+    if (pa !== pb) return pa - pb;
+    return (a.event_id || '').localeCompare(b.event_id || '');
+  });
+  let shown = 0;
+  list.innerHTML = '';
+  for (const e of sorted) {
+    if (q) {
+      const blob = ((e.lhs && e.lhs.quote || '') + ' ' + (e.rhs && e.rhs.quote || '') + ' ' + (e.status || '') + ' ' + (e.event_id || '')).toLowerCase();
+      if (blob.indexOf(q) < 0) continue;
+    }
+    const row = document.createElement('div');
+    row.className = 'viewer-event-row' + (e.event_id === viewerState.activeEventId ? ' is-active' : '');
+    row.dataset.evid = e.event_id;
+    const lp = (e.lhs && e.lhs.page_no || e.lhs_page || '?');
+    const rp = (e.rhs && e.rhs.page_no || e.rhs_page || '?');
+    const stat = (e.status || '').toLowerCase();
+    const quote = (e.lhs && e.lhs.quote || e.rhs && e.rhs.quote || '').slice(0, 160);
+    row.innerHTML = '<span class="ev-chip chip chip-' + escapeHtml(stat) + '">' + escapeHtml(stat) + '</span>' +
+                    '<span class="ev-pages">L p.' + escapeHtml(String(lp)) + ' · R p.' + escapeHtml(String(rp)) + '</span>' +
+                    '<div class="ev-quote">' + escapeHtml(quote) + (quote.length >= 160 ? '…' : '') + '</div>' +
+                    '<div class="ev-id">' + escapeHtml((e.event_id || '').slice(-12)) + '</div>';
+    row.addEventListener('click', () => jumpToEvent(e.event_id));
+    list.appendChild(row);
+    shown++;
+  }
+  cnt.textContent = shown + ' / ' + viewerState.events.length;
+}
+
+async function jumpToEvent(evId) {
+  const e = viewerState.events.find(x => x.event_id === evId);
+  if (!e) return;
+  viewerState.activeEventId = evId;
+  const lhsP = e.lhs && e.lhs.page_no || e.lhs_page;
+  const rhsP = e.rhs && e.rhs.page_no || e.rhs_page;
+  const promises = [];
+  if (lhsP && lhsP !== viewerState.lhsPage) promises.push(renderPdfPage('lhs', lhsP));
+  if (rhsP && rhsP !== viewerState.rhsPage) promises.push(renderPdfPage('rhs', rhsP));
+  await Promise.all(promises);
+  if (lhsP === viewerState.lhsPage && viewerState.lhsPdf) await renderPdfPage('lhs', viewerState.lhsPage);
+  if (rhsP === viewerState.rhsPage && viewerState.rhsPdf) await renderPdfPage('rhs', viewerState.rhsPage);
+  renderViewerSidebar(document.getElementById('vm-filter').value);
+  for (const side of ['lhs', 'rhs']) {
+    const body = document.getElementById('vm-' + side + '-body');
+    const hi = body.querySelector('.bbox-hi.is-active');
+    if (hi) hi.scrollIntoView({block: 'center', behavior: 'smooth'});
+  }
+}
+
+function closeInlineViewer() {
+  document.getElementById('viewer-modal').hidden = true;
+  document.body.style.overflow = '';
+  viewerState.lhsPdf = null; viewerState.rhsPdf = null;
+  viewerState.events = []; viewerState.activeEventId = null;
+}
+
+document.getElementById('vm-close').addEventListener('click', closeInlineViewer);
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !document.getElementById('viewer-modal').hidden) closeInlineViewer();
+});
+document.querySelectorAll('#vm-pager-lhs button, #vm-pager-rhs button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const side = btn.dataset.side;
+    const dir = parseInt(btn.dataset.dir, 10);
+    const cur = side === 'lhs' ? viewerState.lhsPage : viewerState.rhsPage;
+    renderPdfPage(side, cur + dir);
+  });
+});
+document.getElementById('vm-filter').addEventListener('input', e => renderViewerSidebar(e.target.value));
 
 // -------- topic clusters (cross-pair dedup) --------
 async function loadTopics(batchId) {
