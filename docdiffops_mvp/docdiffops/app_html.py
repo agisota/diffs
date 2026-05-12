@@ -711,6 +711,9 @@ function renderDetailKPIs(s) {
     { v: events.length, l: 'Events' },
     { v: high, l: 'High risk', cls: 'high' },
     { v: review, l: 'Review', cls: 'review' },
+    { v: events.filter(e => e.last_review && (e.last_review.decision === 'confirmed')).length, l: '✓ Accepted' },
+    { v: events.filter(e => e.last_review && (e.last_review.decision === 'rejected')).length, l: '✗ Rejected' },
+    { v: events.filter(e => !e.last_review).length, l: 'Pending' },
     { v: partial, l: 'Partial' },
     { v: `${cacheExt}/${docs.length}`, l: 'Cache hits' },
   ];
@@ -1049,6 +1052,7 @@ async function openInlineViewer(pairId) {
   modal.hidden = false;
   document.body.style.overflow = 'hidden';
   viewerState.pairId = pairId;
+  localStorage.setItem('docdiff:lastPair', pairId);
   viewerState.lhsPage = 1; viewerState.rhsPage = 1;
   viewerState.activeEventId = null;
   document.getElementById('vm-pair-id').textContent = pairId;
@@ -1074,13 +1078,15 @@ async function openInlineViewer(pairId) {
     }
     if (lhs) {
       document.getElementById('vm-pages-lhs').textContent = lhs.numPages;
-      await renderPdfPage('lhs', 1);
+      const lhsStart = Math.min(lhs.numPages, parseInt(localStorage.getItem('docdiff:lastPage:' + pairId + ':lhs') || '1', 10) || 1);
+      await renderPdfPage('lhs', lhsStart);
     } else {
       document.getElementById('vm-lhs-body').innerHTML = "<div class='vp-error'>LHS PDF not available.</div>";
     }
     if (rhs) {
       document.getElementById('vm-pages-rhs').textContent = rhs.numPages;
-      await renderPdfPage('rhs', 1);
+      const rhsStart = Math.min(rhs.numPages, parseInt(localStorage.getItem('docdiff:lastPage:' + pairId + ':rhs') || '1', 10) || 1);
+      await renderPdfPage('rhs', rhsStart);
     } else {
       document.getElementById('vm-rhs-body').innerHTML = "<div class='vp-error'>RHS PDF not available.</div>";
     }
@@ -1110,6 +1116,10 @@ async function renderPdfPage(side, pageNo) {
   body.innerHTML = ''; body.appendChild(wrap);
   await page.render({canvasContext: canvas.getContext('2d'), viewport}).promise;
   drawBboxOverlay(side, pageNo, overlay, viewport);
+  try {
+    const key = 'docdiff:lastPage:' + (viewerState.pairId || '') + ':' + side;
+    localStorage.setItem(key, String(pageNo));
+  } catch (_) {}
 }
 
 function drawBboxOverlay(side, pageNo, overlay, viewport) {
@@ -1147,13 +1157,38 @@ function renderViewerSidebar(filterQ) {
     if (pa !== pb) return pa - pb;
     return (a.event_id || '').localeCompare(b.event_id || '');
   });
+  // M4: detect xlsx pair → group rows by meta.sheet.
+  const docs = (detailState?.documents || []).reduce((m, d) => (m[d.doc_id] = d, m), {});
+  const pair = (detailState?.pair_runs || detailState?.pairs || []).find(p => p.pair_id === viewerState.pairId) || {};
+  const isXlsxPair = (docs[pair.lhs_doc_id]?.ext === '.xlsx') || (docs[pair.rhs_doc_id]?.ext === '.xlsx');
+  // For xlsx, secondary-sort by sheet so groups stay together when we
+  // insert sheet headers in the row loop below.
+  if (isXlsxPair) {
+    sorted.sort((a, b) => {
+      const sa = (a.meta?.sheet || a.lhs?.meta?.sheet || '');
+      const sb = (b.meta?.sheet || b.lhs?.meta?.sheet || '');
+      if (sa !== sb) return sa.localeCompare(sb);
+      return (a.event_id || '').localeCompare(b.event_id || '');
+    });
+  }
   let shown = 0;
+  let lastSheet = null;
   list.innerHTML = '';
   for (const e of sorted) {
     if (hideDecided && e.last_review && (e.last_review.decision === 'confirmed' || e.last_review.decision === 'rejected')) continue;
     if (q) {
       const blob = ((e.lhs && e.lhs.quote || '') + ' ' + (e.rhs && e.rhs.quote || '') + ' ' + (e.status || '') + ' ' + (e.event_id || '')).toLowerCase();
       if (blob.indexOf(q) < 0) continue;
+    }
+    if (isXlsxPair) {
+      const sh = (e.meta?.sheet || e.lhs?.meta?.sheet || '(unsheeted)');
+      if (sh !== lastSheet) {
+        const hdr = document.createElement('div');
+        hdr.style.cssText = 'padding:6px 10px;background:var(--panel-2);border-bottom:1px solid var(--line);color:var(--mute);font-size:11px;text-transform:uppercase;letter-spacing:0.05em;font-weight:600';
+        hdr.textContent = '📊 ' + sh;
+        list.appendChild(hdr);
+        lastSheet = sh;
+      }
     }
     const row = document.createElement('div');
     row.className = 'viewer-event-row' + (e.event_id === viewerState.activeEventId ? ' is-active' : '');
@@ -1264,8 +1299,60 @@ function showEventPopover(evId, anchorEl) {
 
 document.getElementById('vm-close').addEventListener('click', closeInlineViewer);
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && !document.getElementById('viewer-modal').hidden) closeInlineViewer();
+  const modal = document.getElementById('viewer-modal');
+  if (modal.hidden) return;
+  // Don't intercept when typing in filter input or popover textarea
+  const tag = (e.target && e.target.tagName || '').toUpperCase();
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  if (e.key === 'Escape') { closeInlineViewer(); return; }
+  if (e.key === 'j' || e.key === 'J') { e.preventDefault(); _viewerJumpRelative(1); return; }
+  if (e.key === 'k' || e.key === 'K') { e.preventDefault(); _viewerJumpRelative(-1); return; }
+  if (e.key === 'a' || e.key === 'A') { e.preventDefault(); _viewerQuickDecide('confirmed'); return; }
+  if (e.key === 'r' || e.key === 'R') { e.preventDefault(); _viewerQuickDecide('rejected'); return; }
 });
+
+function _viewerJumpRelative(delta) {
+  // Skip accepted/rejected when hide-decided is on, otherwise iterate all.
+  const hide = document.getElementById('vm-hide-decided')?.checked ?? true;
+  const visible = viewerState.events.filter(e => !(hide && e.last_review && (e.last_review.decision === 'confirmed' || e.last_review.decision === 'rejected')));
+  if (!visible.length) return;
+  // sort same way renderViewerSidebar does
+  visible.sort((a, b) => {
+    const pa = (a.lhs?.page_no || a.lhs_page || 0), pb = (b.lhs?.page_no || b.lhs_page || 0);
+    if (pa !== pb) return pa - pb;
+    return (a.event_id || '').localeCompare(b.event_id || '');
+  });
+  const curIdx = viewerState.activeEventId ? visible.findIndex(e => e.event_id === viewerState.activeEventId) : -1;
+  const nextIdx = (curIdx < 0 ? 0 : (curIdx + delta + visible.length) % visible.length);
+  const ne = visible[nextIdx];
+  if (ne) jumpToEvent(ne.event_id);
+}
+
+async function _viewerQuickDecide(decision) {
+  if (!viewerState.activeEventId) return;
+  const evId = viewerState.activeEventId;
+  const e = viewerState.events.find(x => x.event_id === evId);
+  if (!e) return;
+  const name = localStorage.getItem('docdiff:reviewer') || prompt('Your name (saved for next time):', '') || 'anonymous';
+  localStorage.setItem('docdiff:reviewer', name);
+  try {
+    const r = await fetch(BASE + '/events/' + evId + '/review', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({decision, reviewer_name: name, comment: ''})
+    }).then(r => r.json());
+    const latest = (r.history || [])[0] || {decision, reviewer_name: name, decided_at: new Date().toISOString()};
+    e.last_review = latest;
+    const cached = (eventsCache || []).find(x => x.event_id === evId);
+    if (cached) cached.last_review = latest;
+    toast(`${decision === 'confirmed' ? '✓' : '✗'} ${decision}`, 'success');
+    renderViewerSidebar(document.getElementById('vm-filter').value);
+    // auto-advance to next pending
+    _viewerJumpRelative(1);
+  } catch (err) {
+    toast('Review failed: ' + err.message, 'error');
+  }
+}
 document.querySelectorAll('#vm-pager-lhs button, #vm-pager-rhs button').forEach(btn => {
   btn.addEventListener('click', () => {
     const side = btn.dataset.side;
