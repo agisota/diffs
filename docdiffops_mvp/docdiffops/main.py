@@ -530,6 +530,61 @@ def list_event_reviews(event_id: str):
     return {"event_id": event_id, "history": repo.list_event_reviews(event_id)}
 
 
+@app.post("/events/{event_id}/ai-suggest")
+def ai_suggest_event(event_id: str):
+    """Return AI recommendation (accept/reject + reasoning) for one event.
+
+    Calls the same LLM stack used elsewhere in the project. Read-only —
+    does not record a decision, just returns the suggestion so the SPA
+    can pre-fill the popover.
+    """
+    from .state import _get_repo  # local import to avoid cycle
+    repo = _get_repo()
+    event: dict | None = None
+    batch_id: str | None = None
+    if repo is not None:
+        try:
+            from .db import get_session
+            from .db.models import DiffEvent, PairRun
+            with get_session() as session:
+                row = session.get(DiffEvent, event_id)
+                if row is not None:
+                    event = {
+                        "event_id": row.id,
+                        "status": row.status,
+                        "severity": row.severity,
+                        "explanation_short": row.explanation_short,
+                        "lhs": {"quote": row.lhs_quote, "doc_id": row.lhs_doc_id},
+                        "rhs": {"quote": row.rhs_quote, "doc_id": row.rhs_doc_id},
+                    }
+                    if row.pair_run_id:
+                        pr = session.get(PairRun, row.pair_run_id)
+                        if pr is not None:
+                            batch_id = pr.batch_id
+        except Exception as e:
+            logger.warning("ai_suggest: DB lookup failed: %s", e)
+    if event is None:
+        raise HTTPException(status_code=404, detail="event not found")
+    # Best-effort doc enrichment from batch state.
+    lhs_doc: dict | None = None
+    rhs_doc: dict | None = None
+    if batch_id:
+        try:
+            st = load_state(batch_id)
+            docs = {d["doc_id"]: d for d in (st.get("documents") or [])}
+            lhs_doc = docs.get(event["lhs"].get("doc_id"))
+            rhs_doc = docs.get(event["rhs"].get("doc_id"))
+        except Exception:
+            pass
+    from .ai_suggest import suggest_for_event
+    try:
+        result = suggest_for_event(event, lhs_doc=lhs_doc, rhs_doc=rhs_doc)
+    except Exception as e:
+        logger.exception("ai_suggest failed for %s", event_id)
+        raise HTTPException(status_code=502, detail=f"AI suggest failed: {e}")
+    return {"event_id": event_id, "suggestion": result}
+
+
 # ---------------------------------------------------------------------------
 # PR-4.2: anchor rerender
 # ---------------------------------------------------------------------------

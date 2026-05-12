@@ -208,6 +208,19 @@ main.app { padding: 28px 32px 64px; max-width: 1500px; margin: 0 auto; }
 .v10-links .v10-pill:hover { border-color: var(--blue); text-decoration: none; }
 .v10-stub { font-size: 11.5px; color: var(--mute); margin-top: 10px; }
 
+/* ------------------- global progress bar ------------------- */
+.global-progress { margin: 0 0 18px; padding: 10px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--rad); }
+.global-progress .gp-head { display: flex; justify-content: space-between; align-items: center; font-size: 12px; margin-bottom: 6px; }
+.global-progress .gp-head .gp-title { color: var(--mute); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
+.global-progress .gp-head .gp-stats { color: var(--fg); font-variant-numeric: tabular-nums; font-family: ui-monospace, monospace; font-size: 12.5px; }
+.global-progress .gp-bar { height: 7px; background: var(--panel-2); border-radius: 4px; overflow: hidden; display: flex; }
+.global-progress .gp-bar > div { height: 100%; transition: width 0.4s ease; }
+.global-progress .gp-bar .seg-conf { background: var(--green); }
+.global-progress .gp-bar .seg-rej { background: var(--red); }
+.global-progress .gp-pct { font-weight: 600; font-size: 13px; }
+.global-progress.gp-done .gp-pct { color: var(--green); }
+.global-progress .gp-pct.gp-low { color: var(--amber); }
+
 /* ------------------- toast ------------------- */
 .toast-wrap { position: fixed; bottom: 24px; right: 24px; display: flex; flex-direction: column; gap: 8px; z-index: 100; }
 .toast { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--blue); border-radius: 5px; padding: 10px 14px 10px 14px; min-width: 240px; box-shadow: var(--shadow); animation: slide-in 0.2s ease; font-size: 13px; display: flex; align-items: flex-start; gap: 10px; }
@@ -254,6 +267,25 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
 .viewer-modal .vm-zoom .zoom-val { font-family: ui-monospace, monospace; min-width: 42px; text-align: center; font-size: 11.5px; }
 .viewer-modal .vm-close { background: transparent; border: 1px solid var(--line); color: var(--mute); padding: 5px 12px; border-radius: 5px; font-size: 13px; }
 .viewer-modal .vm-close:hover { color: var(--red); border-color: var(--red); }
+.viewer-modal .vm-head .vm-search { display: flex; align-items: center; gap: 4px; margin-right: 8px; }
+.viewer-modal .vm-head .vm-search input { background: var(--panel-2); border: 1px solid var(--line); color: var(--fg); padding: 3px 8px; border-radius: 4px; font-size: 12px; width: 160px; }
+.viewer-modal .vm-head .vm-search .results { font-size: 11px; color: var(--mute); font-family: ui-monospace, monospace; min-width: 50px; text-align: center; }
+.viewer-modal .vm-head .vm-search button { background: var(--panel-2); border: 1px solid var(--line); color: var(--fg); padding: 3px 8px; border-radius: 4px; font-size: 11px; }
+.pdf-page-wrap .search-hit { position: absolute; background: rgba(255,214,10,0.45); border: 1px solid rgba(255,214,10,0.8); border-radius: 2px; pointer-events: none; }
+.pdf-page-wrap .search-hit.is-current { background: rgba(255,165,0,0.7); border-color: rgba(255,140,0,1); }
+.viewer-modal .vm-head .vm-mode { display: flex; gap: 2px; margin-right: 8px; }
+.viewer-modal .vm-head .vm-mode button { background: var(--panel-2); border: 1px solid var(--line); color: var(--fg); padding: 3px 10px; font-size: 11px; }
+.viewer-modal .vm-head .vm-mode button.active { background: var(--blue); color: #04111a; border-color: var(--blue); font-weight: 600; }
+.viewer-modal .vp-text { padding: 16px 20px; overflow: auto; background: var(--bg); font-family: ui-sans-serif, sans-serif; line-height: 1.6; font-size: 13.5px; }
+.viewer-modal .vp-text .block { padding: 6px 10px; margin: 2px 0; border-radius: 3px; }
+.viewer-modal .vp-text .block.added { background: rgba(46,194,126,0.18); border-left: 3px solid var(--green); }
+.viewer-modal .vp-text .block.deleted { background: rgba(229,72,77,0.18); border-left: 3px solid var(--red); text-decoration: line-through; opacity: 0.75; }
+.viewer-modal .vp-text .block.modified, .viewer-modal .vp-text .block.partial { background: rgba(255,178,36,0.14); border-left: 3px solid var(--amber); }
+.viewer-modal .vp-text .block.same { background: var(--panel); border-left: 3px solid var(--line); }
+.viewer-modal .vp-text .block:hover { box-shadow: 0 0 0 1px var(--blue); cursor: pointer; }
+.viewer-modal .vp-text .block-meta { font-size: 10.5px; color: var(--mute); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 2px; }
+.bookmark-btn { background: transparent; border: 0; color: var(--mute); cursor: pointer; font-size: 13px; padding: 0 4px; }
+.bookmark-btn.is-marked { color: var(--amber); }
 
 .viewer-modal .vm-body {
   flex: 1; min-height: 0; display: grid;
@@ -425,6 +457,7 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
     </div>
 
     <div id="detail-kpis" class="kpis"></div>
+    <div id="global-progress-block"></div>
 
     <div class="tabs-line">
       <button class="tab-line active" data-detail-tab="events">События</button>
@@ -508,6 +541,16 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
     <h3>📖 Inline viewer</h3>
     <span class="pair-id" id="vm-pair-id"></span>
     <div class="spacer"></div>
+    <div class="vm-mode">
+      <button id="vm-mode-pdf" class="active" data-mode="pdf">PDF</button>
+      <button id="vm-mode-text" data-mode="text">Текст</button>
+    </div>
+    <div class="vm-search">
+      <input id="vm-search-input" placeholder="Поиск в документе…">
+      <span class="results" id="vm-search-results"></span>
+      <button id="vm-search-prev" title="Previous match">↑</button>
+      <button id="vm-search-next" title="Next match">↓</button>
+    </div>
     <div class="vm-zoom">
       <button id="vm-zoom-out" title="Уменьшить">−</button>
       <span class="zoom-val" id="vm-zoom-val">140%</span>
@@ -542,6 +585,9 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
         <input id="vm-filter" placeholder="Filter quote/status…">
         <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11.5px;color:var(--mute);cursor:pointer">
           <input type="checkbox" id="vm-hide-decided" checked> hide accepted/rejected
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;margin-top:4px;font-size:11.5px;color:var(--mute);cursor:pointer">
+          <input type="checkbox" id="vm-only-bookmarks"> только ★ bookmarks
         </label>
       </div>
       <div class="vs-list" id="vm-events-list"></div>
@@ -770,6 +816,7 @@ async function openBatch(batchId) {
     document.getElementById('detail-title').textContent = s.title || '(untitled)';
     document.getElementById('detail-id').textContent = batchId;
     renderDetailKPIs(s);
+    renderGlobalProgress(s);
     renderEvents(s);
     renderPairs(s);
     renderDocs(s);
@@ -804,6 +851,39 @@ async function openBatch(batchId) {
 }
 
 document.getElementById('btn-refresh-detail').addEventListener('click', () => currentBatchId && openBatch(currentBatchId));
+
+function renderGlobalProgress(s) {
+  const block = document.getElementById('global-progress-block');
+  if (!block) return;
+  const evs = s.diff_events || [];
+  if (!evs.length) { block.innerHTML = ''; return; }
+  const conf = evs.filter(e => e.last_review && e.last_review.decision === 'confirmed').length;
+  const rej = evs.filter(e => e.last_review && e.last_review.decision === 'rejected').length;
+  const total = evs.length;
+  const decided = conf + rej;
+  const pct = total > 0 ? Math.round(decided / total * 100) : 0;
+  const cw = total > 0 ? (conf / total * 100) : 0;
+  const rw = total > 0 ? (rej / total * 100) : 0;
+  const done = pct === 100;
+  const lowClass = pct < 30 ? 'gp-low' : '';
+  block.innerHTML = `
+    <div class='global-progress ${done ? 'gp-done' : ''}'>
+      <div class='gp-head'>
+        <span class='gp-title'>Прогресс review</span>
+        <span class='gp-stats'>
+          <span style='color:var(--green)'>✓ ${conf}</span> ·
+          <span style='color:var(--red)'>✗ ${rej}</span> ·
+          <span style='color:var(--amber)'>⏳ ${total - decided} pending</span> ·
+          <span class='gp-pct ${lowClass}'>${pct}%</span>
+        </span>
+      </div>
+      <div class='gp-bar'>
+        <div class='seg-conf' style='width:${cw}%'></div>
+        <div class='seg-rej' style='width:${rw}%'></div>
+      </div>
+    </div>
+  `;
+}
 
 function renderDetailKPIs(s) {
   const docs = s.documents || [];
@@ -931,6 +1011,7 @@ function toggleEventRow(tr, e) {
             <option value='rejected'>rejected</option>
             <option value='needs_more_info'>needs more info</option>
             <option value='deferred'>deferred</option>
+            <option value='comment'>💬 comment only</option>
           </select>
           <input class='review-comment batch-input' placeholder='Comment (optional)' style='margin:0'>
           <button class='btn btn-primary review-submit' style='padding:8px 14px'>Save</button>
@@ -975,15 +1056,26 @@ async function loadReviewHistory(eventId, container) {
 }
 
 function renderReviewHistory(container, history) {
-  if (!history.length) { container.innerHTML = "<div class='muted' style='font-size:12px;font-style:italic'>(no reviews yet)</div>"; return; }
-  container.innerHTML = history.map(h => `
-    <div style='padding:6px 0;border-bottom:1px dashed var(--line);font-size:12.5px'>
-      <span class='chip chip-${escapeHtml((h.decision||'').replace(/_/g,'-'))}'>${escapeHtml(h.decision||'')}</span>
-      <strong style='margin-left:6px'>${escapeHtml(h.reviewer_name||'?')}</strong>
-      <span class='muted' style='margin-left:6px'>${escapeHtml(h.decided_at||'')}</span>
-      ${h.comment ? `<div class='muted' style='margin-top:3px'>${escapeHtml(h.comment)}</div>` : ''}
-    </div>
-  `).join('');
+  if (!history.length) { container.innerHTML = "<div class='muted' style='font-size:12px;font-style:italic'>(пока никто не оставил decision/комментарий)</div>"; return; }
+  // Sort oldest-first to read top-down like a chat.
+  const sorted = (history || []).slice().sort((a, b) => (a.decided_at || '').localeCompare(b.decided_at || ''));
+  container.innerHTML = '<div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px">Лента действий</div>' +
+    sorted.map(h => {
+      const isComment = (h.decision || '').toLowerCase() === 'comment';
+      const chipCls = isComment ? 'chip-low' : 'chip-' + escapeHtml((h.decision || '').replace(/_/g, '-'));
+      const icon = isComment ? '💬' : (h.decision === 'confirmed' ? '✓' : (h.decision === 'rejected' ? '✗' : '•'));
+      return `
+        <div style='padding:8px 10px;margin:4px 0;background:var(--bg);border-left:3px solid ${isComment ? 'var(--blue)' : 'var(--line)'};border-radius:3px;font-size:12.5px'>
+          <div style='display:flex;gap:8px;align-items:center'>
+            <span>${icon}</span>
+            <span class='chip ${chipCls}'>${escapeHtml(h.decision || '')}</span>
+            <strong>${escapeHtml(h.reviewer_name || 'anonymous')}</strong>
+            <span class='muted' style='font-size:11px;margin-left:auto'>${escapeHtml(h.decided_at || '')}</span>
+          </div>
+          ${h.comment ? `<div style='margin-top:4px;padding-left:24px'>${escapeHtml(h.comment)}</div>` : ''}
+        </div>
+      `;
+    }).join('');
 }
 
 ['evt-q', 'evt-sev', 'evt-stat', 'evt-pair'].forEach(id => {
@@ -1262,6 +1354,11 @@ const viewerState = {
   events: [],
   activeEventId: null,
   zoom: 1.4,  // pdf.js render scale; updated by zoom controls
+  mode: 'pdf',  // 'pdf' | 'text'
+  searchHits: [],
+  searchActive: -1,
+  searchQuery: '',
+  searchIndex: null,
 };
 
 async function _viewerSetZoom(newZoom) {
@@ -1337,6 +1434,10 @@ async function openInlineViewer(pairId) {
   document.getElementById('vm-lhs-body').innerHTML = "<div class='vp-loading'>Loading LHS PDF…</div>";
   document.getElementById('vm-rhs-body').innerHTML = "<div class='vp-loading'>Loading RHS PDF…</div>";
   viewerState.events = (detailState.diff_events || []).filter(e => e.pair_id === pairId);
+  viewerState.searchIndex = null;
+  viewerState.searchHits = []; viewerState.searchActive = -1; viewerState.searchQuery = '';
+  const sri = document.getElementById('vm-search-input'); if (sri) sri.value = '';
+  const srr = document.getElementById('vm-search-results'); if (srr) srr.textContent = '';
   renderViewerSidebar('');
   try {
     const [lhs, rhs] = await Promise.all([
@@ -1429,6 +1530,104 @@ function renderMinimap() {
   }
 }
 
+// -------- search-in-document (A) --------
+async function _buildSearchIndex() {
+  viewerState.searchIndex = {lhs: [], rhs: []};
+  for (const side of ['lhs', 'rhs']) {
+    const pdf = side === 'lhs' ? viewerState.lhsPdf : viewerState.rhsPdf;
+    if (!pdf) continue;
+    for (let p = 1; p <= pdf.numPages; p++) {
+      try {
+        const page = await pdf.getPage(p);
+        const tc = await page.getTextContent();
+        const text = tc.items.map(it => it.str).join(' ');
+        viewerState.searchIndex[side].push({page: p, text: text.toLowerCase()});
+      } catch (_) {}
+    }
+  }
+}
+
+async function _viewerSearch(q) {
+  q = (q || '').toLowerCase().trim();
+  viewerState.searchQuery = q;
+  if (!q) { viewerState.searchHits = []; viewerState.searchActive = -1; _updateSearchUI(); return; }
+  if (!viewerState.searchIndex) await _buildSearchIndex();
+  const hits = [];
+  for (const side of ['lhs', 'rhs']) {
+    for (const p of viewerState.searchIndex[side] || []) {
+      if (p.text.includes(q)) hits.push({side, page: p.page});
+    }
+  }
+  viewerState.searchHits = hits;
+  viewerState.searchActive = hits.length > 0 ? 0 : -1;
+  _updateSearchUI();
+  if (viewerState.searchActive >= 0) _viewerSearchJump(0);
+}
+
+function _updateSearchUI() {
+  const r = document.getElementById('vm-search-results');
+  if (!r) return;
+  if (!viewerState.searchHits.length) {
+    r.textContent = viewerState.searchQuery ? 'нет' : '';
+  } else {
+    r.textContent = (viewerState.searchActive + 1) + '/' + viewerState.searchHits.length;
+  }
+}
+
+function _viewerSearchJump(delta) {
+  if (!viewerState.searchHits.length) return;
+  viewerState.searchActive = (viewerState.searchActive + delta + viewerState.searchHits.length) % viewerState.searchHits.length;
+  const hit = viewerState.searchHits[viewerState.searchActive];
+  renderPdfPage(hit.side, hit.page);
+  _updateSearchUI();
+}
+
+document.getElementById('vm-search-input').addEventListener('input', e => _viewerSearch(e.target.value));
+document.getElementById('vm-search-next').addEventListener('click', () => _viewerSearchJump(1));
+document.getElementById('vm-search-prev').addEventListener('click', () => _viewerSearchJump(-1));
+
+// -------- text-mode toggle (B) --------
+function _viewerSetMode(mode) {
+  viewerState.mode = mode;
+  document.getElementById('vm-mode-pdf').classList.toggle('active', mode === 'pdf');
+  document.getElementById('vm-mode-text').classList.toggle('active', mode === 'text');
+  if (mode === 'pdf') {
+    if (viewerState.lhsPdf) renderPdfPage('lhs', viewerState.lhsPage);
+    if (viewerState.rhsPdf) renderPdfPage('rhs', viewerState.rhsPage);
+  } else {
+    _renderTextMode('lhs');
+    _renderTextMode('rhs');
+  }
+}
+
+function _renderTextMode(side) {
+  const body = document.getElementById('vm-' + side + '-body');
+  if (!body) return;
+  body.innerHTML = '';
+  const wrap = document.createElement('div');
+  wrap.className = 'vp-text';
+  const evs = viewerState.events.slice().sort((a, b) => {
+    const pa = (a.lhs?.page_no || a.lhs_page || 0), pb = (b.lhs?.page_no || b.lhs_page || 0);
+    return pa - pb || (a.event_id || '').localeCompare(b.event_id || '');
+  });
+  for (const e of evs) {
+    const text = (side === 'lhs' ? (e.lhs?.quote) : (e.rhs?.quote)) || '';
+    if (!text.trim()) continue;
+    const st = e.status || 'same';
+    if (side === 'lhs' && st === 'added') continue;
+    if (side === 'rhs' && st === 'deleted') continue;
+    const block = document.createElement('div');
+    block.className = 'block ' + st;
+    block.innerHTML = '<div class="block-meta">' + escapeHtml(st) + ' · p.' + escapeHtml(String(e[side]?.page_no || '?')) + '</div>' + escapeHtml(text);
+    block.addEventListener('click', () => jumpToEvent(e.event_id));
+    wrap.appendChild(block);
+  }
+  body.appendChild(wrap);
+}
+
+document.getElementById('vm-mode-pdf').addEventListener('click', () => _viewerSetMode('pdf'));
+document.getElementById('vm-mode-text').addEventListener('click', () => _viewerSetMode('text'));
+
 function drawBboxOverlay(side, pageNo, overlay, viewport) {
   const evs = viewerState.events.filter(e => {
     const p = side === 'lhs' ? (e.lhs && e.lhs.page_no || e.lhs_page) : (e.rhs && e.rhs.page_no || e.rhs_page);
@@ -1459,6 +1658,8 @@ function renderViewerSidebar(filterQ) {
   const cnt = document.getElementById('vm-events-count');
   const q = (filterQ || '').toLowerCase();
   const hideDecided = document.getElementById('vm-hide-decided')?.checked ?? true;
+  const onlyBookmarks = document.getElementById('vm-only-bookmarks')?.checked ?? false;
+  const bookmarks = JSON.parse(localStorage.getItem('docdiff:bookmarks:' + currentBatchId) || '[]');
   const sorted = viewerState.events.slice().sort((a, b) => {
     const pa = (a.lhs && a.lhs.page_no || a.lhs_page || 0), pb = (b.lhs && b.lhs.page_no || b.lhs_page || 0);
     if (pa !== pb) return pa - pb;
@@ -1483,6 +1684,7 @@ function renderViewerSidebar(filterQ) {
   list.innerHTML = '';
   for (const e of sorted) {
     if (hideDecided && e.last_review && (e.last_review.decision === 'confirmed' || e.last_review.decision === 'rejected')) continue;
+    if (onlyBookmarks && !bookmarks.includes(e.event_id)) continue;
     if (q) {
       const blob = ((e.lhs && e.lhs.quote || '') + ' ' + (e.rhs && e.rhs.quote || '') + ' ' + (e.status || '') + ' ' + (e.event_id || '')).toLowerCase();
       if (blob.indexOf(q) < 0) continue;
@@ -1512,12 +1714,23 @@ function renderViewerSidebar(filterQ) {
     row.innerHTML = '<span class="ev-chip chip chip-' + escapeHtml(stat) + '">' + escapeHtml(stat) + '</span>' +
                     '<span class="ev-pages">L p.' + escapeHtml(String(lp)) + ' · R p.' + escapeHtml(String(rp)) + noBboxBadge + '</span>' +
                     '<div class="ev-quote">' + escapeHtml(quote) + (quote.length >= 160 ? '…' : '') + '</div>' +
-                    '<div class="ev-id">' + escapeHtml((e.event_id || '').slice(-12)) + ' ' + lrChip + '</div>';
+                    '<div class="ev-id">' + escapeHtml((e.event_id || '').slice(-12)) + ' ' + lrChip +
+                    ' <button class="bookmark-btn ' + (bookmarks.includes(e.event_id) ? 'is-marked' : '') + '" data-bm="' + escapeHtml(e.event_id) + '">★</button>' +
+                    '</div>';
     row.addEventListener('click', () => jumpToEvent(e.event_id));
     const rbtn = row.querySelector('button.review-btn');
     if (rbtn) {
       rbtn.addEventListener('click', ev => { ev.stopPropagation(); showEventPopover(e.event_id, rbtn); });
     }
+    const bm = row.querySelector('button.bookmark-btn');
+    if (bm) bm.addEventListener('click', ev => {
+      ev.stopPropagation();
+      const list2 = JSON.parse(localStorage.getItem('docdiff:bookmarks:' + currentBatchId) || '[]');
+      const idx = list2.indexOf(e.event_id);
+      if (idx >= 0) list2.splice(idx, 1); else list2.push(e.event_id);
+      localStorage.setItem('docdiff:bookmarks:' + currentBatchId, JSON.stringify(list2));
+      bm.classList.toggle('is-marked');
+    });
     list.appendChild(row);
     shown++;
   }
@@ -1571,8 +1784,10 @@ function showEventPopover(evId, anchorEl) {
       <textarea placeholder="Comment (optional)"></textarea>
       <div class="pop-actions">
         <button class="accept">✓ Accept</button>
+        <button class="ai-suggest" style="flex:0;background:rgba(255,214,10,0.18);border-color:#7a5c1a;color:var(--amber);padding:6px 10px">✨ AI</button>
         <button class="reject">✗ Reject</button>
       </div>
+      <div class="ai-suggest-result" style="margin-top:8px;font-size:11.5px;color:var(--mute);display:none"></div>
       ${lr ? `<div class="pop-prev">Last: <span class="chip chip-${escapeHtml((lr.decision||'').replace(/_/g,'-'))}">${escapeHtml(lr.decision||'')}</span> by ${escapeHtml(lr.reviewer_name||'?')} · ${escapeHtml(lr.decided_at||'')}</div>` : ''}
     </div>
   `;
@@ -1604,6 +1819,24 @@ function showEventPopover(evId, anchorEl) {
   };
   pop.querySelector('button.accept').addEventListener('click', () => submit('confirmed'));
   pop.querySelector('button.reject').addEventListener('click', () => submit('rejected'));
+  const aiBtn = pop.querySelector('button.ai-suggest');
+  const aiResult = pop.querySelector('.ai-suggest-result');
+  if (aiBtn) aiBtn.addEventListener('click', async () => {
+    aiBtn.disabled = true; const orig = aiBtn.textContent; aiBtn.textContent = '⏳';
+    try {
+      const r = await fetch(BASE + '/events/' + evId + '/ai-suggest', {method: 'POST'}).then(r => r.json());
+      const s = r.suggestion || {};
+      aiResult.style.display = 'block';
+      const conf = Math.round((s.confidence || 0) * 100);
+      const cls = s.decision === 'confirmed' ? 'chip-confirmed' : 'chip-rejected';
+      aiResult.innerHTML = `<strong>AI:</strong> <span class="chip ${cls}">${escapeHtml(s.decision || '?')}</span> <span style="color:var(--mute)">(${conf}%)</span><div style="margin-top:4px">${escapeHtml(s.reasoning || '')}</div>`;
+    } catch (e) {
+      aiResult.style.display = 'block';
+      aiResult.textContent = 'AI ошибка: ' + e.message;
+    } finally {
+      aiBtn.disabled = false; aiBtn.textContent = orig;
+    }
+  });
 }
 
 document.getElementById('vm-close').addEventListener('click', closeInlineViewer);
@@ -1707,6 +1940,7 @@ document.querySelectorAll('#vm-pager-lhs button, #vm-pager-rhs button').forEach(
 });
 document.getElementById('vm-filter').addEventListener('input', e => renderViewerSidebar(e.target.value));
 document.getElementById('vm-hide-decided').addEventListener('change', () => renderViewerSidebar(document.getElementById('vm-filter').value));
+document.getElementById('vm-only-bookmarks').addEventListener('change', () => renderViewerSidebar(document.getElementById('vm-filter').value));
 document.getElementById('vm-zoom-in').addEventListener('click', () => _viewerSetZoom(viewerState.zoom * 1.2));
 document.getElementById('vm-zoom-out').addEventListener('click', () => _viewerSetZoom(viewerState.zoom / 1.2));
 document.getElementById('vm-zoom-fit').addEventListener('click', () => _viewerFitToWidth());
