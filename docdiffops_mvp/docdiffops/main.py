@@ -275,6 +275,21 @@ def get_merged_docx(batch_id: str, pair_id: str):
     lhs_doc = docs.get(pair.get("lhs_doc_id"))
     rhs_doc = docs.get(pair.get("rhs_doc_id"))
     events = [e for e in (state.get("diff_events") or []) if e.get("pair_id") == pair_id]
+    # Enrich with last_review so render_merged_docx sees confirmed/rejected.
+    # load_state() does NOT add last_review — only get_batch() does (M3).
+    # Without this, every event was treated as pending and the merged DOCX
+    # produced track-changes for everything regardless of reviewer decisions.
+    from .state import _get_repo
+    repo = _get_repo()
+    if repo is not None:
+        try:
+            latest = repo.list_reviews_for_batch(batch_id)
+            for e in events:
+                eid = e.get("event_id")
+                if eid and eid in latest:
+                    e["last_review"] = latest[eid]
+        except Exception as exc:
+            logger.warning("merged_docx: last_review enrich failed: %s", exc)
     from .render_merged_docx import render_merged_docx
     out_dir = batch_dir(batch_id) / "pairs" / pair_id
     out_dir.mkdir(parents=True, exist_ok=True)
