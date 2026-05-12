@@ -56,6 +56,41 @@ def list_batches_endpoint():
     return list_batches()
 
 
+@app.delete("/batches/{batch_id}")
+def delete_batch(batch_id: str):
+    """Delete a batch — DB rows (cascading via FK) + on-disk batch_dir.
+
+    Irreversible. Use with care. Returns the deleted batch_id on success.
+    """
+    try:
+        load_state(batch_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="batch not found")
+    # DB delete via cascading FKs.
+    from .state import _get_repo
+    repo = _get_repo()
+    if repo is not None:
+        try:
+            from .db import get_session
+            from .db.models import Batch
+            with get_session() as session:
+                row = session.get(Batch, batch_id)
+                if row is not None:
+                    session.delete(row)
+                    session.flush()
+        except Exception as e:
+            logger.warning("batch delete: DB removal failed: %s", e)
+    # Filesystem cleanup.
+    import shutil
+    bdir = batch_dir(batch_id)
+    if bdir.exists():
+        try:
+            shutil.rmtree(bdir)
+        except Exception as e:
+            logger.warning("batch delete: rmtree failed: %s", e)
+    return {"batch_id": batch_id, "deleted": True}
+
+
 @app.post("/batches")
 def create_batch_endpoint(req: CreateBatchRequest):
     state = create_batch(title=req.title, config=req.config)
@@ -660,6 +695,79 @@ def get_batch_audit(batch_id: str, limit: int = Query(200, ge=1, le=2000)):
     if repo is None:
         return {"batch_id": batch_id, "entries": []}
     return {"batch_id": batch_id, "entries": repo.list_audit_for_batch(batch_id, limit=limit)}
+
+
+@app.get("/batches/{batch_id}/events.csv")
+def export_events_csv(batch_id: str):
+    """Export all events of a batch as UTF-8 CSV with BOM (Excel-friendly).
+
+    Columns: event_id, pair_id, status, severity, confidence,
+    lhs_doc_id, lhs_page, lhs_quote, rhs_doc_id, rhs_page, rhs_quote,
+    last_review_decision, last_review_reviewer, last_review_date,
+    last_review_comment, explanation_short.
+    """
+    try:
+        state = load_state(batch_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="batch not found")
+    # Enrich with last_review (same M3 pattern as get_batch).
+    from .state import _get_repo
+    repo = _get_repo()
+    events = state.get("diff_events") or []
+    if repo is not None:
+        try:
+            latest = repo.list_reviews_for_batch(batch_id)
+            for e in events:
+                eid = e.get("event_id")
+                if eid and eid in latest:
+                    e["last_review"] = latest[eid]
+        except Exception as exc:
+            logger.warning("csv export: last_review enrich failed: %s", exc)
+
+    import csv
+    import io as _io
+    buf = _io.StringIO()
+    buf.write("﻿")  # UTF-8 BOM for Excel
+    cols = [
+        "event_id", "pair_id", "status", "severity", "confidence",
+        "lhs_doc_id", "lhs_page", "lhs_quote",
+        "rhs_doc_id", "rhs_page", "rhs_quote",
+        "last_review_decision", "last_review_reviewer", "last_review_date", "last_review_comment",
+        "explanation_short",
+    ]
+    w = csv.writer(buf, delimiter=",", quoting=csv.QUOTE_MINIMAL)
+    w.writerow(cols)
+    for e in events:
+        lhs = e.get("lhs") or {}
+        rhs = e.get("rhs") or {}
+        lr = e.get("last_review") or {}
+        w.writerow([
+            e.get("event_id") or "",
+            e.get("pair_id") or "",
+            e.get("status") or "",
+            e.get("severity") or "",
+            e.get("confidence") or "",
+            lhs.get("doc_id") or "",
+            lhs.get("page_no") or "",
+            (lhs.get("quote") or "").replace("\n", " ").replace("\r", " "),
+            rhs.get("doc_id") or "",
+            rhs.get("page_no") or "",
+            (rhs.get("quote") or "").replace("\n", " ").replace("\r", " "),
+            lr.get("decision") or "",
+            lr.get("reviewer_name") or "",
+            lr.get("decided_at") or "",
+            (lr.get("comment") or "").replace("\n", " ").replace("\r", " "),
+            (e.get("explanation_short") or "").replace("\n", " ").replace("\r", " "),
+        ])
+    csv_bytes = buf.getvalue().encode("utf-8")
+    return Response(
+        content=csv_bytes,
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="events_{batch_id[-12:]}.csv"',
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 @app.get("/batches/{batch_id}/clusters")

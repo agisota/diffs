@@ -114,6 +114,7 @@ main.app { padding: 28px 32px 64px; max-width: 1500px; margin: 0 auto; }
 .batch-card .row { display: flex; justify-content: space-between; font-size: 12px; color: var(--mute); padding: 3px 0; }
 .batch-card .row .v { color: var(--fg); font-weight: 500; font-variant-numeric: tabular-nums; }
 .batch-card .when { font-size: 11px; color: var(--mute); margin-top: 8px; }
+.batch-card button.batch-del:hover { color: var(--red); }
 
 /* ------------------- batch detail ------------------- */
 .detail-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 18px; gap: 24px; }
@@ -537,6 +538,7 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
         <button class="btn" id="btn-rerender-compare" style="padding:5px 10px;font-size:12px;background:rgba(76,195,255,0.12);border-color:var(--blue-dim);color:var(--blue)" title="Пересчитать сравнение по существующим extract'ам (применяет последние фиксы pipeline без re-upload)">🔄 Пересчитать compare</button>
         <button class="btn" id="btn-rerender-full" style="padding:5px 10px;font-size:12px;background:rgba(255,178,36,0.12);border-color:#7a5c1a;color:var(--amber)" title="Полный rerender: re-extract + re-compare. Долго на больших батчах. Применяется когда нужно подхватить новый normalize/extract для старых документов.">🔁 Полный rerender</button>
         <a class="btn" id="btn-merged-zip" style="padding:5px 10px;font-size:12px;background:rgba(46,194,126,0.10);border-color:#1c5a3a;color:var(--green);text-decoration:none" href="#" title="Скачать все merged.docx архивом ZIP">📦 Все merged.zip</a>
+        <a class="btn" id="btn-events-csv" style="padding:5px 10px;font-size:12px" href="#" title="Экспорт всех событий в CSV (UTF-8 BOM, Excel-friendly)">📊 CSV events</a>
       </span>
     </div>
 
@@ -720,6 +722,27 @@ function toast(msg, kind) {
   }
 }
 
+// -------- browser notifications --------
+function _maybeNotify(title, body, kind) {
+  if (!('Notification' in window)) return;
+  if (Notification.permission !== 'granted') return;
+  try {
+    const n = new Notification(title, {
+      body: body,
+      tag: 'docdiff-' + (currentBatchId || ''),
+    });
+    setTimeout(() => n.close(), 8000);
+  } catch (_) {}
+}
+
+// Ask for permission on first interaction (button click). Polite — not on page load.
+function _askNotifyPermissionOnce() {
+  if (!('Notification' in window)) return;
+  if (Notification.permission === 'default') {
+    Notification.requestPermission().catch(() => {});
+  }
+}
+
 // -------- staging --------
 const staged = [];
 const dropzone = document.getElementById('dropzone');
@@ -813,6 +836,7 @@ document.getElementById('clear-staged').addEventListener('click', () => { staged
 // -------- create + upload + run --------
 document.getElementById('btn-create').addEventListener('click', async () => {
   if (staged.length === 0) return;
+  _askNotifyPermissionOnce();
   const btn = document.getElementById('btn-create');
   const progBox = document.getElementById('upload-progress');
   const progFill = document.getElementById('progress-fill');
@@ -861,7 +885,11 @@ document.getElementById('btn-create').addEventListener('click', async () => {
     while (true) {
       await new Promise(r => setTimeout(r, pollDelay));
       const t = await fetch(BASE + '/tasks/' + taskId).then(r => r.json());
-      if (t.state === 'SUCCESS') { result = t.result || {}; break; }
+      if (t.state === 'SUCCESS') {
+        result = t.result || {};
+        _maybeNotify('DocDiffOps: pipeline готов', `Batch ${batchId.slice(-8)}: ${(result.events ?? 0)} событий`);
+        break;
+      }
       if (t.state === 'FAILURE') throw new Error('pipeline failed: ' + (t.result || 'no detail'));
       pollDelay = Math.min(15000, pollDelay + 1000);
     }
@@ -913,7 +941,10 @@ async function refreshBatches() {
       const total = b.diff_events_count ?? b.events ?? 0;
       const high = b.high_count ?? 0;
       card.innerHTML = `
-        <div class='id'>${escapeHtml(b.batch_id || '')}</div>
+        <div style='display:flex;justify-content:space-between;align-items:start;gap:8px'>
+          <div class='id'>${escapeHtml(b.batch_id || '')}</div>
+          <button class='batch-del' data-bid='${escapeHtml(b.batch_id)}' title='Удалить batch' style='background:transparent;border:0;color:var(--mute);cursor:pointer;font-size:13px;padding:0 4px'>🗑</button>
+        </div>
         <div class='title'>${escapeHtml(b.title || '(untitled)')}</div>
         <div class='row'><span>Документы</span><span class='v'>${b.documents_count ?? '—'}</span></div>
         <div class='row'><span>Пар</span><span class='v'>${b.pair_runs_count ?? '—'}</span></div>
@@ -922,6 +953,20 @@ async function refreshBatches() {
         <div class='when'>${escapeHtml(b.updated_at || b.created_at || '')}</div>
       `;
       card.addEventListener('click', () => openBatch(b.batch_id));
+      const delBtn = card.querySelector('button.batch-del');
+      if (delBtn) {
+        delBtn.addEventListener('click', async (ev) => {
+          ev.stopPropagation();
+          if (!confirm(`Удалить batch ${b.batch_id.slice(-8)} ${b.title ? '"' + b.title + '"' : ''}? Это удалит все документы, события, артефакты, review-decisions безвозвратно.`)) return;
+          try {
+            await fetch(BASE + '/batches/' + b.batch_id, {method: 'DELETE'}).then(r => r.json());
+            toast('Batch удалён: ' + b.batch_id.slice(-8), 'success');
+            refreshBatches();
+          } catch (e) {
+            toast('Удалить не удалось: ' + e.message, 'error');
+          }
+        });
+      }
       grid.appendChild(card);
     }
   } catch (e) {
@@ -1424,6 +1469,7 @@ document.getElementById('btn-rerender').addEventListener('click', async () => {
 });
 async function _runAsyncRerender(endpoint, label) {
   if (!currentBatchId) return;
+  _askNotifyPermissionOnce();
   const confirmMsg = endpoint === 'rerender-compare'
     ? 'Запустить пересчёт compare для всех пар? Это применит последние фиксы pipeline без re-upload. Review_decisions сохранятся.'
     : 'Полный rerender: удалит кэшированные extract\'ы и пересоберёт всё заново. На больших батчах может занять минуты. Review_decisions сохранятся. Продолжить?';
@@ -1450,7 +1496,9 @@ async function _runAsyncRerender(endpoint, label) {
       const t = await fetch(BASE + '/tasks/' + taskId).then(r => r.json());
       if (t.state === 'SUCCESS') {
         const m = t.result || {};
-        toast(`${label} готов: ${m.pairs ?? 0} пар, ${m.events ?? 0} событий за ${m.time_to_report_sec ?? '?'}s`, 'success');
+        const msg = `${label} готов: ${m.pairs ?? 0} пар, ${m.events ?? 0} событий за ${m.time_to_report_sec ?? '?'}s`;
+        toast(msg, 'success');
+        _maybeNotify('DocDiffOps: ' + label + ' готов', `${m.pairs ?? 0} пар, ${m.events ?? 0} событий`, 'success');
         openBatch(currentBatchId);
         break;
       }
@@ -1474,6 +1522,15 @@ document.getElementById('btn-merged-zip').addEventListener('click', (e) => {
   a.download = 'merged_' + currentBatchId.slice(-8) + '.zip';
   document.body.appendChild(a); a.click(); a.remove();
   toast('Архив генерируется… скачивание начнётся через несколько секунд', 'info');
+});
+
+document.getElementById('btn-events-csv').addEventListener('click', e => {
+  e.preventDefault();
+  if (!currentBatchId) return;
+  const a = document.createElement('a');
+  a.href = BASE + '/batches/' + currentBatchId + '/events.csv';
+  a.download = 'events_' + currentBatchId.slice(-8) + '.csv';
+  document.body.appendChild(a); a.click(); a.remove();
 });
 
 // -------- inline viewer (M1) --------
