@@ -19,6 +19,18 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 COPY docdiffops /app/docdiffops
 COPY samples /app/samples
 
+# Bundle pdf.js (legacy IIFE build) locally — Cloudflare CDN versions are
+# unreliable and the prod app cannot depend on uncontrolled third-party
+# CDNs. We pin to 3.11.174 (the last legacy-IIFE-first release that works
+# without ES modules and a separate worker bundle).
+RUN mkdir -p /app/docdiffops/static/pdfjs && \
+    curl -fsSL https://unpkg.com/pdfjs-dist@3.11.174/legacy/build/pdf.min.js \
+        -o /app/docdiffops/static/pdfjs/pdf.min.js && \
+    curl -fsSL https://unpkg.com/pdfjs-dist@3.11.174/legacy/build/pdf.worker.min.js \
+        -o /app/docdiffops/static/pdfjs/pdf.worker.min.js && \
+    test -s /app/docdiffops/static/pdfjs/pdf.min.js && \
+    test -s /app/docdiffops/static/pdfjs/pdf.worker.min.js
+
 ENV DATA_DIR=/data
 RUN mkdir -p /data
 

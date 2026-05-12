@@ -8,6 +8,7 @@ from typing import Annotated
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
+from fastapi.staticfiles import StaticFiles
 
 from .app_html import APP_HTML
 from pydantic import BaseModel, Field
@@ -29,6 +30,12 @@ from .pipeline import run_batch as run_batch_sync
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="DocDiffOps", version="0.1.0")
+
+# Static assets (pdf.js bundled in Dockerfile). Tolerate missing dir on dev
+# boxes that don't run the Docker build — viewer falls back gracefully.
+_STATIC_DIR = Path(__file__).parent / "static"
+if _STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
 
 @app.get("/", include_in_schema=False)

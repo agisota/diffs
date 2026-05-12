@@ -12,12 +12,12 @@ APP_HTML = r"""<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>DocDiffOps</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.min.js"></script>
+<script src="/static/pdfjs/pdf.min.js"></script>
 <script>
   // pdf.js worker must be configured before any getDocument call.
+  // Bundled locally by Dockerfile to avoid uncontrolled CDN dependency.
   if (window.pdfjsLib) {
-    window.pdfjsLib.GlobalWorkerOptions.workerSrc =
-      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.js';
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc = '/static/pdfjs/pdf.worker.min.js';
   }
 </script>
 <style>
@@ -56,9 +56,11 @@ header.topbar {
 .brand-dot { width: 22px; height: 22px; border-radius: 5px; background: linear-gradient(135deg, #ff5470, #4cc3ff); display: inline-block; }
 .tabs { display: flex; gap: 4px; margin-left: auto; }
 .tab { background: transparent; border: 1px solid transparent; color: var(--mute); padding: 6px 12px; border-radius: 6px; font-size: 13px; }
-.tab.active { color: var(--strong); background: var(--panel-2); border-color: var(--line); }
-.topbar .ext { display: flex; gap: 14px; color: var(--mute); font-size: 12px; align-items: center; }
+.tab.active { color: var(--strong); background: var(--panel-2); border-color: var(--blue-dim); box-shadow: inset 0 0 0 1px var(--blue-dim); }
+.tab:hover:not(.active) { color: var(--fg); background: var(--panel-2); }
+.topbar .ext { display: flex; gap: 14px; color: var(--mute); font-size: 12px; align-items: center; flex-wrap: wrap; }
 .topbar .ext a { color: var(--mute); }
+@media (max-width: 700px) { .topbar .ext { font-size: 11px; gap: 8px; } }
 .dot-online { width: 8px; height: 8px; border-radius: 50%; background: var(--green); display: inline-block; box-shadow: 0 0 8px var(--green); }
 
 /* ------------------- layout ------------------- */
@@ -98,8 +100,9 @@ main.app { padding: 28px 32px 64px; max-width: 1500px; margin: 0 auto; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-primary { background: linear-gradient(135deg, #4cc3ff, #2b95cc); color: #04111a; border-color: transparent; font-weight: 600; }
 .btn-primary:hover:not(:disabled) { filter: brightness(1.1); }
-.progress-bar { height: 4px; background: var(--panel-2); border-radius: 2px; overflow: hidden; margin: 10px 0; }
-.progress-bar > div { height: 100%; background: var(--blue); transition: width 0.2s ease; }
+.progress-bar { height: 6px; background: var(--panel-2); border-radius: 3px; overflow: hidden; margin: 10px 0; }
+.progress-bar > div { height: 100%; background: var(--blue); transition: width 0.3s ease; border-radius: 3px; }
+#progress-label { font-size: 13px; }
 
 /* ------------------- batch list ------------------- */
 .batches-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
@@ -122,6 +125,9 @@ main.app { padding: 28px 32px 64px; max-width: 1500px; margin: 0 auto; }
 .kpi .l { font-size: 11px; color: var(--mute); text-transform: uppercase; letter-spacing: 0.06em; }
 .kpi.high .v { color: var(--red); }
 .kpi.review .v { color: var(--amber); }
+.kpi.accepted .v { color: var(--green); }
+.kpi.rejected .v { color: var(--red); }
+.kpi.pending .v { color: var(--amber); }
 
 .tabs-line { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin-bottom: 16px; }
 .tab-line { background: transparent; border: 0; color: var(--mute); padding: 10px 16px; border-bottom: 2px solid transparent; font-size: 13px; }
@@ -134,11 +140,12 @@ main.app { padding: 28px 32px 64px; max-width: 1500px; margin: 0 auto; }
 .events-toolbar .count { color: var(--mute); font-size: 12px; align-self: center; margin-left: auto; }
 
 .evt-table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); border-radius: var(--rad); overflow: hidden; }
-.evt-table th { background: var(--panel-2); text-align: left; padding: 10px 12px; font-size: 12px; font-weight: 600; color: var(--mute); border-bottom: 1px solid var(--line); position: sticky; top: 56px; z-index: 5; }
+.evt-table th { background: var(--panel-2); text-align: left; padding: 10px 12px; font-size: 12px; font-weight: 600; color: var(--mute); border-bottom: 1px solid var(--line); position: sticky; top: 48px; z-index: 5; box-shadow: 0 1px 0 var(--line); }
 .evt-table td { padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; font-size: 13px; }
 .evt-table tr:last-child td { border-bottom: 0; }
 .evt-table tr:hover td { background: rgba(76,195,255,0.04); cursor: pointer; }
 .evt-table tr.expanded td { background: rgba(76,195,255,0.08); }
+.quote-cell { max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .evt-detail { padding: 0 !important; }
 .evt-detail .inner { padding: 14px 16px; background: var(--panel-2); border-top: 1px solid var(--line); }
 .quote-box { background: var(--bg); border: 1px solid var(--line); border-left: 3px solid var(--gray); padding: 10px 12px; border-radius: 4px; margin: 6px 0; font-size: 13px; line-height: 1.6; }
@@ -163,10 +170,11 @@ main.app { padding: 28px 32px 64px; max-width: 1500px; margin: 0 auto; }
 
 /* ------------------- pair viewer ------------------- */
 .pairs-list { display: grid; gap: 10px; }
-.pair-card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--rad); padding: 12px 14px; }
+.pair-card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--rad); padding: 12px 14px; transition: all 0.15s ease; }
+.pair-card:hover { border-color: var(--blue-dim); transform: translateY(-1px); }
 .pair-card .head { display: flex; justify-content: space-between; align-items: center; gap: 14px; }
 .pair-card .pair-id { font-family: ui-monospace, monospace; font-size: 11.5px; color: var(--mute); }
-.pair-card .docs { font-size: 14px; font-weight: 500; }
+.pair-card .docs { font-size: 14px; font-weight: 500; word-break: break-word; overflow-wrap: anywhere; }
 .pair-card .arrow { color: var(--mute); margin: 0 6px; }
 .pair-card .stats { display: flex; gap: 14px; font-size: 12px; color: var(--mute); margin-top: 8px; }
 .pair-card .stats span { color: var(--fg); font-variant-numeric: tabular-nums; }
@@ -201,13 +209,17 @@ main.app { padding: 28px 32px 64px; max-width: 1500px; margin: 0 auto; }
 
 /* ------------------- toast ------------------- */
 .toast-wrap { position: fixed; bottom: 24px; right: 24px; display: flex; flex-direction: column; gap: 8px; z-index: 100; }
-.toast { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--blue); border-radius: 5px; padding: 10px 14px; min-width: 240px; box-shadow: var(--shadow); animation: slide-in 0.2s ease; font-size: 13px; }
+.toast { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--blue); border-radius: 5px; padding: 10px 14px 10px 14px; min-width: 240px; box-shadow: var(--shadow); animation: slide-in 0.2s ease; font-size: 13px; display: flex; align-items: flex-start; gap: 10px; }
+.toast .toast-msg { flex: 1; }
+.toast .toast-x { background: transparent; border: 0; color: var(--mute); font-size: 15px; line-height: 1; cursor: pointer; flex-shrink: 0; padding: 0; margin-top: 1px; }
+.toast .toast-x:hover { color: var(--fg); }
 .toast.error { border-left-color: var(--red); }
 .toast.success { border-left-color: var(--green); }
 @keyframes slide-in { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 
 /* ------------------- empty / loading ------------------- */
 .empty { text-align: center; color: var(--mute); padding: 40px; font-style: italic; }
+.empty::before { display: block; font-size: 28px; margin-bottom: 10px; font-style: normal; content: attr(data-icon); }
 .spinner { width: 18px; height: 18px; border: 2px solid var(--blue-dim); border-top-color: var(--blue); border-radius: 50%; animation: spin 0.7s linear infinite; display: inline-block; vertical-align: middle; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -276,7 +288,7 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
   font-size: 11.5px; color: var(--mute); text-transform: uppercase; letter-spacing: 0.06em; flex-shrink: 0;
 }
 .viewer-modal .vm-sidebar .vs-filter { padding: 8px 10px; border-bottom: 1px solid var(--line); }
-.viewer-modal .vm-sidebar .vs-filter input { width: 100%; background: var(--panel-2); border: 1px solid var(--line); color: var(--fg); padding: 5px 8px; border-radius: 4px; font-size: 12.5px; }
+.viewer-modal .vm-sidebar .vs-filter input { width: 100%; background: var(--panel-2); border: 1px solid var(--line); color: var(--fg); padding: 8px 10px; border-radius: 4px; font-size: 12.5px; }
 .viewer-modal .vm-sidebar .vs-list { flex: 1; min-height: 0; overflow: auto; }
 .viewer-event-row {
   padding: 8px 10px; border-bottom: 1px solid var(--line); cursor: pointer; font-size: 12.5px;
@@ -286,7 +298,7 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
 .viewer-event-row.is-active { background: rgba(76,195,255,0.10); border-left: 3px solid var(--blue); padding-left: 7px; }
 .viewer-event-row .ev-chip { grid-row: 1; grid-column: 1; }
 .viewer-event-row .ev-pages { grid-row: 1; grid-column: 2; color: var(--mute); font-size: 11px; text-align: right; font-family: ui-monospace, monospace; }
-.viewer-event-row .ev-quote { grid-row: 2; grid-column: 1 / -1; color: var(--mute); font-size: 12px; line-height: 1.4; max-height: 3em; overflow: hidden; }
+.viewer-event-row .ev-quote { grid-row: 2; grid-column: 1 / -1; color: var(--mute); font-size: 12px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .viewer-event-row .ev-id { grid-row: 3; grid-column: 1 / -1; color: var(--mute); font-family: ui-monospace, monospace; font-size: 10.5px; }
 
 .viewer-modal .ev-popover {
@@ -404,7 +416,7 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
         <span class="count" id="evt-count"></span>
       </div>
       <table class="evt-table" id="evt-table">
-        <thead><tr><th style="width:90px">event</th><th style="width:100px">status</th><th style="width:90px">severity</th><th style="width:60px">conf</th><th style="width:110px">decision</th><th>LHS quote</th><th>RHS quote</th></tr></thead>
+        <thead><tr><th style="width:90px">event</th><th style="width:100px">status</th><th style="width:90px">severity</th><th style="width:60px">conf</th><th style="width:130px">decision</th><th>LHS quote</th><th>RHS quote</th></tr></thead>
         <tbody id="evt-tbody"></tbody>
       </table>
     </div>
@@ -435,36 +447,34 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
 
 <div id="viewer-modal" class="viewer-modal" hidden>
   <div class="vm-head">
-    <h3>&#128366; Inline viewer</h3>
+    <h3>📖 Inline viewer</h3>
     <span class="pair-id" id="vm-pair-id"></span>
     <div class="spacer"></div>
     <div class="vm-pager" id="vm-pager-lhs">
-      <span>LHS</span>
-      <button data-side="lhs" data-dir="-1">&#9664;</button>
+      <button data-side="lhs" data-dir="-1">◀</button>
       <span><span id="vm-page-lhs">1</span> / <span id="vm-pages-lhs">?</span></span>
-      <button data-side="lhs" data-dir="1">&#9654;</button>
+      <button data-side="lhs" data-dir="1">▶</button>
     </div>
     <div class="vm-pager" id="vm-pager-rhs">
-      <span>RHS</span>
-      <button data-side="rhs" data-dir="-1">&#9664;</button>
+      <button data-side="rhs" data-dir="-1">◀</button>
       <span><span id="vm-page-rhs">1</span> / <span id="vm-pages-rhs">?</span></span>
-      <button data-side="rhs" data-dir="1">&#9654;</button>
+      <button data-side="rhs" data-dir="1">▶</button>
     </div>
-    <button class="vm-close" id="vm-close">Close &#10005;</button>
+    <button class="vm-close" id="vm-close">Close ✕</button>
   </div>
   <div class="vm-body">
     <div class="vm-pane">
-      <div class="vp-head"><span class="side lhs">LHS</span><span class="fname" id="vm-lhs-name">&#8212;</span></div>
-      <div class="vp-body" id="vm-lhs-body"><div class="vp-loading">Loading&#8230;</div></div>
+      <div class="vp-head"><span class="side lhs">LHS</span><span class="fname" id="vm-lhs-name">—</span></div>
+      <div class="vp-body" id="vm-lhs-body"><div class="vp-loading">Loading…</div></div>
     </div>
     <div class="vm-pane">
-      <div class="vp-head"><span class="side rhs">RHS</span><span class="fname" id="vm-rhs-name">&#8212;</span></div>
-      <div class="vp-body" id="vm-rhs-body"><div class="vp-loading">Loading&#8230;</div></div>
+      <div class="vp-head"><span class="side rhs">RHS</span><span class="fname" id="vm-rhs-name">—</span></div>
+      <div class="vp-body" id="vm-rhs-body"><div class="vp-loading">Loading…</div></div>
     </div>
     <div class="vm-sidebar">
-      <div class="vs-head">&#1057;&#1086;&#1073;&#1099;&#1090;&#1080;&#1103; <span id="vm-events-count" class="mono"></span></div>
+      <div class="vs-head">События <span id="vm-events-count" class="mono"></span></div>
       <div class="vs-filter">
-        <input id="vm-filter" placeholder="Filter quote/status&#8230;">
+        <input id="vm-filter" placeholder="Filter quote/status…">
         <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11.5px;color:var(--mute);cursor:pointer">
           <input type="checkbox" id="vm-hide-decided" checked> hide accepted/rejected
         </label>
@@ -509,9 +519,22 @@ document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () =>
 function toast(msg, kind) {
   const el = document.createElement('div');
   el.className = 'toast' + (kind ? ' ' + kind : '');
-  el.textContent = msg;
+  const msgSpan = document.createElement('span');
+  msgSpan.className = 'toast-msg';
+  msgSpan.textContent = msg;
+  const xBtn = document.createElement('button');
+  xBtn.className = 'toast-x';
+  xBtn.textContent = '✕';
+  xBtn.setAttribute('aria-label', 'dismiss');
+  xBtn.addEventListener('click', () => { el.style.opacity = '0'; setTimeout(() => el.remove(), 200); });
+  el.appendChild(msgSpan);
+  el.appendChild(xBtn);
   document.getElementById('toast-wrap').appendChild(el);
-  setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 200); }, 4000);
+  // error toasts persist until dismissed; success=4s, info=3s
+  if (kind !== 'error') {
+    const delay = kind === 'success' ? 4000 : 3000;
+    setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 200); }, delay);
+  }
 }
 
 // -------- staging --------
@@ -720,9 +743,9 @@ function renderDetailKPIs(s) {
     { v: events.length, l: 'Events' },
     { v: high, l: 'High risk', cls: 'high' },
     { v: review, l: 'Review', cls: 'review' },
-    { v: events.filter(e => e.last_review && (e.last_review.decision === 'confirmed')).length, l: '✓ Accepted' },
-    { v: events.filter(e => e.last_review && (e.last_review.decision === 'rejected')).length, l: '✗ Rejected' },
-    { v: events.filter(e => !e.last_review).length, l: 'Pending' },
+    { v: events.filter(e => e.last_review && (e.last_review.decision === 'confirmed')).length, l: '✓ Accepted', cls: 'accepted' },
+    { v: events.filter(e => e.last_review && (e.last_review.decision === 'rejected')).length, l: '✗ Rejected', cls: 'rejected' },
+    { v: events.filter(e => !e.last_review).length, l: 'Pending', cls: 'pending' },
     { v: partial, l: 'Partial' },
     { v: `${cacheExt}/${docs.length}`, l: 'Cache hits' },
   ];
@@ -778,8 +801,8 @@ function applyEventsFilter() {
       <td><span class='chip chip-${escapeHtml(sevC)}'>${escapeHtml(sevC)}</span></td>
       <td class='mono'>${e.confidence == null ? '—' : (typeof e.confidence === 'number' ? e.confidence.toFixed(2) : escapeHtml(e.confidence))}</td>
       <td>${e.last_review ? `<span class='chip chip-${escapeHtml((e.last_review.decision||'').replace(/_/g,'-'))}' title='${escapeHtml((e.last_review.reviewer_name||'?') + ' · ' + (e.last_review.decided_at||''))}'>${escapeHtml(e.last_review.decision||'')}</span>` : `<span class='muted' style='font-size:11px'>—</span>`}</td>
-      <td class='muted' style='max-width:340px;overflow:hidden;text-overflow:ellipsis'>${highlight(e.lhs?.quote, q)}</td>
-      <td class='muted' style='max-width:340px;overflow:hidden;text-overflow:ellipsis'>${highlight(e.rhs?.quote, q)}</td>
+      <td class='muted quote-cell'>${highlight(e.lhs?.quote, q)}</td>
+      <td class='muted quote-cell'>${highlight(e.rhs?.quote, q)}</td>
     `;
     tr.addEventListener('click', () => toggleEventRow(tr, e));
     tbody.appendChild(tr);
@@ -901,7 +924,7 @@ function renderPairs(s) {
   // lookup so we can attach narrative text to each pair card.
   const summariesByPair = (s.pair_summaries || []).reduce((m, x) => (m[x.pair_id] = x, m), {});
   const pairs = s.pair_runs || s.pairs || [];
-  if (!pairs.length) { list.innerHTML = "<div class='empty'>(пока нет пар)</div>"; return; }
+  if (!pairs.length) { list.innerHTML = "<div class='empty' data-icon='💤'>(пока нет пар)</div>"; return; }
   const arts = (s.artifacts || []);
   for (const p of pairs) {
     const lhs = docs[p.lhs_doc_id] || {};
@@ -943,7 +966,7 @@ function renderPairs(s) {
         ${high ? `<div style='color:var(--red)'>high <span style='color:var(--red)'>${high}</span></div>` : ''}
       </div>
       <button data-viewer-pair='${escapeHtml(p.pair_id)}' style='margin-top:12px;width:100%;padding:10px 16px;background:linear-gradient(135deg, #4cc3ff, #2b95cc);color:#04111a;border:0;border-radius:6px;font-weight:600;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px'>
-        &#128366; Открыть документы с подсветкой правок
+        📖 Открыть документы с подсветкой правок
       </button>
       <div class='links' style='margin-top:8px'>
         ${pairArts.map(a => `<a class='pill-link' href='${BASE}/batches/${currentBatchId}/download/${escapeHtml(a.path)}' target='_blank'>${escapeHtml(a.type || 'download')} ↓</a>`).join('')}
@@ -965,7 +988,7 @@ function renderPairs(s) {
 function renderDocs(s) {
   const grid = document.getElementById('docs-grid');
   const docs = s.documents || [];
-  if (!docs.length) { grid.innerHTML = "<div class='empty'>(пока нет документов)</div>"; return; }
+  if (!docs.length) { grid.innerHTML = "<div class='empty' data-icon='📭'>(пока нет документов)</div>"; return; }
   grid.innerHTML = '';
   for (const d of docs) {
     const card = document.createElement('div');
@@ -1083,7 +1106,7 @@ async function openInlineViewer(pairId) {
     viewerState.lhsPdf = lhs;
     viewerState.rhsPdf = rhs;
     if (!lhs && !rhs) {
-      document.getElementById('vm-lhs-body').innerHTML = "<div class='vp-error'>No annotated PDF artifacts for this pair.</div>";
+      document.getElementById('vm-lhs-body').innerHTML = "<div class='vp-error'>PDF-артефакты для этой пары не найдены. Возможно, документы не были сконвертированы в PDF при normalize (старый батч до фикса HTML/TXT нормализации). Перезалейте файлы и повторите прогон.</div>";
       document.getElementById('vm-rhs-body').innerHTML = "";
       return;
     }
@@ -1092,14 +1115,14 @@ async function openInlineViewer(pairId) {
       const lhsStart = Math.min(lhs.numPages, parseInt(localStorage.getItem('docdiff:lastPage:' + pairId + ':lhs') || '1', 10) || 1);
       await renderPdfPage('lhs', lhsStart);
     } else {
-      document.getElementById('vm-lhs-body').innerHTML = "<div class='vp-error'>LHS PDF not available.</div>";
+      document.getElementById('vm-lhs-body').innerHTML = "<div class='vp-error'>LHS PDF недоступен. Документ не был сконвертирован в PDF при normalize (возможно старый батч до фикса HTML/TXT нормализации). Перезалейте файл и повторите прогон.</div>";
     }
     if (rhs) {
       document.getElementById('vm-pages-rhs').textContent = rhs.numPages;
       const rhsStart = Math.min(rhs.numPages, parseInt(localStorage.getItem('docdiff:lastPage:' + pairId + ':rhs') || '1', 10) || 1);
       await renderPdfPage('rhs', rhsStart);
     } else {
-      document.getElementById('vm-rhs-body').innerHTML = "<div class='vp-error'>RHS PDF not available.</div>";
+      document.getElementById('vm-rhs-body').innerHTML = "<div class='vp-error'>RHS PDF недоступен. Документ не был сконвертирован в PDF при normalize (возможно старый батч до фикса HTML/TXT нормализации). Перезалейте файл и повторите прогон.</div>";
     }
   } catch (e) {
     toast('Viewer error: ' + e.message, 'error');
@@ -1210,7 +1233,7 @@ function renderViewerSidebar(filterQ) {
     const quote = (e.lhs && e.lhs.quote || e.rhs && e.rhs.quote || '').slice(0, 160);
     const lrChip = e.last_review ?
       '<span class="chip chip-' + escapeHtml((e.last_review.decision||'').replace(/_/g,'-')) + '" style="font-size:9.5px">' + escapeHtml(e.last_review.decision||'') + '</span>' :
-      '<button class="pill-link review-btn" data-evid="' + escapeHtml(e.event_id) + '" style="padding:1px 6px;font-size:10px">&#9889; review</button>';
+      '<button class="pill-link review-btn" data-evid="' + escapeHtml(e.event_id) + '" style="padding:1px 6px;font-size:10px">⚡ review</button>';
     row.innerHTML = '<span class="ev-chip chip chip-' + escapeHtml(stat) + '">' + escapeHtml(stat) + '</span>' +
                     '<span class="ev-pages">L p.' + escapeHtml(String(lp)) + ' · R p.' + escapeHtml(String(rp)) + '</span>' +
                     '<div class="ev-quote">' + escapeHtml(quote) + (quote.length >= 160 ? '…' : '') + '</div>' +
@@ -1264,7 +1287,7 @@ function showEventPopover(evId, anchorEl) {
   pop.innerHTML = `
     <div class="pop-head">
       <span>Event · <span class="chip chip-${escapeHtml((e.status||'').toLowerCase())}">${escapeHtml(e.status||'?')}</span></span>
-      <button class="pop-close" aria-label="close">&#10005;</button>
+      <button class="pop-close" aria-label="close">✕</button>
     </div>
     <div class="pop-body">
       ${e.lhs?.quote ? `<div class="quote lhs">${escapeHtml(e.lhs.quote.slice(0,300))}${e.lhs.quote.length>300?'…':''}</div>` : ''}
@@ -1272,8 +1295,8 @@ function showEventPopover(evId, anchorEl) {
       ${e.explanation_short ? `<div style="font-style:italic;color:var(--mute);margin:6px 0">${escapeHtml(e.explanation_short)}</div>` : ''}
       <textarea placeholder="Comment (optional)"></textarea>
       <div class="pop-actions">
-        <button class="accept">&#10003; Accept</button>
-        <button class="reject">&#10007; Reject</button>
+        <button class="accept">✓ Accept</button>
+        <button class="reject">✗ Reject</button>
       </div>
       ${lr ? `<div class="pop-prev">Last: <span class="chip chip-${escapeHtml((lr.decision||'').replace(/_/g,'-'))}">${escapeHtml(lr.decision||'')}</span> by ${escapeHtml(lr.reviewer_name||'?')} · ${escapeHtml(lr.decided_at||'')}</div>` : ''}
     </div>
@@ -1444,7 +1467,7 @@ async function loadAudit(batchId) {
 function renderArtifacts(s) {
   const list = document.getElementById('arts-list');
   const arts = s.artifacts || [];
-  if (!arts.length) { list.innerHTML = "<div class='empty'>(нет артефактов)</div>"; }
+  if (!arts.length) { list.innerHTML = "<div class='empty' data-icon='📭'>(нет артефактов)</div>"; }
   else {
     list.innerHTML = '';
     for (const a of arts) {
