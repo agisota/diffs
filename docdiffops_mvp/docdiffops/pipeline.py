@@ -385,12 +385,17 @@ def run_all_pairs(
                     lhs_doc_id=lhs_ev.get("doc_id"),
                     lhs_page=lhs_ev.get("page_no"),
                     lhs_block_id=lhs_ev.get("block_id"),
-                    lhs_bbox=lhs_ev.get("bbox") if isinstance(lhs_ev.get("bbox"), dict) else None,
+                    # bbox from fitz/pptx is a list [x0,y0,x1,y1]; the DB
+                    # JSON column accepts both list and dict. The old check
+                    # `isinstance(..., dict)` rejected every list-bbox and
+                    # silently persisted None — that's why the inline viewer
+                    # showed no highlights even when blocks had real coords.
+                    lhs_bbox=lhs_ev.get("bbox") if isinstance(lhs_ev.get("bbox"), (list, dict)) else None,
                     lhs_quote=lhs_ev.get("quote"),
                     rhs_doc_id=rhs_ev.get("doc_id"),
                     rhs_page=rhs_ev.get("page_no"),
                     rhs_block_id=rhs_ev.get("block_id"),
-                    rhs_bbox=rhs_ev.get("bbox") if isinstance(rhs_ev.get("bbox"), dict) else None,
+                    rhs_bbox=rhs_ev.get("bbox") if isinstance(rhs_ev.get("bbox"), (list, dict)) else None,
                     rhs_quote=rhs_ev.get("quote"),
                     explanation_short=ev.get("explanation_short"),
                     review_required=bool(ev.get("review_required")),
