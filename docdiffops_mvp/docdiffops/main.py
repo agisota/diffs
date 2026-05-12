@@ -58,37 +58,88 @@ def list_batches_endpoint():
 
 @app.delete("/batches/{batch_id}")
 def delete_batch(batch_id: str):
-    """Delete a batch — DB rows (cascading via FK) + on-disk batch_dir.
+    """Delete a batch — DB rows + on-disk batch_dir.
 
-    Irreversible. Use with care. Returns the deleted batch_id on success.
+    pair_runs.{lhs,rhs}_document_version_id FK has ON DELETE RESTRICT
+    (CLAUDE.md §schema), so we can't just session.delete(Batch). Have
+    to delete in reverse-FK order: review_decisions → diff_events →
+    pair_runs → artifacts → audit_log → document_versions → documents
+    → batch. Wrapped in single transaction.
     """
     try:
         load_state(batch_id)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="batch not found")
-    # DB delete via cascading FKs.
-    from .state import _get_repo
-    repo = _get_repo()
-    if repo is not None:
-        try:
-            from .db import get_session
-            from .db.models import Batch
-            with get_session() as session:
-                row = session.get(Batch, batch_id)
-                if row is not None:
-                    session.delete(row)
-                    session.flush()
-        except Exception as e:
-            logger.warning("batch delete: DB removal failed: %s", e)
-    # Filesystem cleanup.
+    db_ok = True
+    db_err = None
+    try:
+        from sqlalchemy import delete, select
+        from .db import get_session
+        from .db.models import (
+            Batch, Document, DocumentVersion, PairRun, DiffEvent,
+            ReviewDecision, Artifact, AuditLog,
+        )
+        with get_session() as session:
+            # Batch existence check.
+            batch_row = session.get(Batch, batch_id)
+            if batch_row is None:
+                # Already gone from DB but maybe still on disk — proceed
+                # to fs cleanup below.
+                pass
+            else:
+                # 1. Review decisions FOR events in pairs of this batch.
+                event_ids = list(session.scalars(
+                    select(DiffEvent.id)
+                    .join(PairRun, PairRun.id == DiffEvent.pair_run_id)
+                    .where(PairRun.batch_id == batch_id)
+                ).all())
+                if event_ids:
+                    session.execute(
+                        delete(ReviewDecision).where(ReviewDecision.diff_event_id.in_(event_ids))
+                    )
+                # 2. Diff events.
+                pair_ids = list(session.scalars(
+                    select(PairRun.id).where(PairRun.batch_id == batch_id)
+                ).all())
+                if pair_ids:
+                    session.execute(delete(DiffEvent).where(DiffEvent.pair_run_id.in_(pair_ids)))
+                # 3. Pair runs (this releases the RESTRICT on document_versions).
+                session.execute(delete(PairRun).where(PairRun.batch_id == batch_id))
+                # 4. Artifacts + audit_log.
+                session.execute(delete(Artifact).where(Artifact.batch_id == batch_id))
+                session.execute(delete(AuditLog).where(AuditLog.batch_id == batch_id))
+                # 5. Document versions (now safe — no pair_runs reference them).
+                doc_ids = list(session.scalars(
+                    select(Document.id).where(Document.batch_id == batch_id)
+                ).all())
+                if doc_ids:
+                    session.execute(
+                        delete(DocumentVersion).where(DocumentVersion.document_id.in_(doc_ids))
+                    )
+                # 6. Documents.
+                session.execute(delete(Document).where(Document.batch_id == batch_id))
+                # 7. Finally, the batch row.
+                session.delete(batch_row)
+                session.flush()
+    except Exception as e:
+        db_ok = False
+        db_err = str(e)
+        logger.warning("batch delete: DB removal failed: %s", e)
+        # Re-raise so the user sees the actual problem rather than a
+        # success that lies. Filesystem cleanup is skipped — leaving the
+        # state consistent rather than half-deleted.
+        raise HTTPException(status_code=500, detail=f"DB delete failed: {e}")
+    # Filesystem cleanup — only if DB delete succeeded.
     import shutil
     bdir = batch_dir(batch_id)
+    fs_ok = True
     if bdir.exists():
         try:
             shutil.rmtree(bdir)
         except Exception as e:
+            fs_ok = False
             logger.warning("batch delete: rmtree failed: %s", e)
-    return {"batch_id": batch_id, "deleted": True}
+    return {"batch_id": batch_id, "deleted": db_ok and fs_ok, "db": db_ok, "fs": fs_ok}
 
 
 @app.post("/batches")
