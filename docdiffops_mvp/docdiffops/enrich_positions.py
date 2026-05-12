@@ -22,8 +22,10 @@ except ImportError:  # pragma: no cover — rapidfuzz is in compare.py deps alre
 
 logger = logging.getLogger(__name__)
 
-_MIN_QUOTE_LEN = 20
-_MIN_SCORE = 85
+_MIN_QUOTE_LEN = 8   # 20 was rejecting headings ("Документ A" = 10 chars)
+                     # and short LLM-added quotes like "Пятый - добавлен."
+_MIN_SCORE = 70      # 85 was too strict for short strings; rapidfuzz
+                     # token_set_ratio drops fast on 1-2 token quotes
 
 
 def _enrich_side(side_data: dict, blocks: list[dict]) -> bool:

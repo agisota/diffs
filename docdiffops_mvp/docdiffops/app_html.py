@@ -247,6 +247,10 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
 .viewer-modal .vm-head .vm-pager { display: flex; align-items: center; gap: 6px; color: var(--mute); font-size: 12px; }
 .viewer-modal .vm-head .vm-pager button { background: var(--panel-2); border: 1px solid var(--line); color: var(--fg); padding: 3px 10px; border-radius: 4px; font-size: 12px; }
 .viewer-modal .vm-head .vm-pager button:disabled { opacity: 0.4; cursor: not-allowed; }
+.viewer-modal .vm-zoom { display: flex; align-items: center; gap: 6px; color: var(--mute); font-size: 12px; margin-right: 8px; }
+.viewer-modal .vm-zoom button { background: var(--panel-2); border: 1px solid var(--line); color: var(--fg); padding: 3px 9px; border-radius: 4px; font-size: 13px; font-weight: 600; line-height: 1; }
+.viewer-modal .vm-zoom button:hover { border-color: var(--blue); }
+.viewer-modal .vm-zoom .zoom-val { font-family: ui-monospace, monospace; min-width: 42px; text-align: center; font-size: 11.5px; }
 .viewer-modal .vm-close { background: transparent; border: 1px solid var(--line); color: var(--mute); padding: 5px 12px; border-radius: 5px; font-size: 13px; }
 .viewer-modal .vm-close:hover { color: var(--red); border-color: var(--red); }
 
@@ -450,6 +454,12 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
     <h3>📖 Inline viewer</h3>
     <span class="pair-id" id="vm-pair-id"></span>
     <div class="spacer"></div>
+    <div class="vm-zoom">
+      <button id="vm-zoom-out" title="Уменьшить">−</button>
+      <span class="zoom-val" id="vm-zoom-val">140%</span>
+      <button id="vm-zoom-in" title="Увеличить">+</button>
+      <button id="vm-zoom-fit" title="По ширине">⤢</button>
+    </div>
     <div class="vm-pager" id="vm-pager-lhs">
       <button data-side="lhs" data-dir="-1">◀</button>
       <span><span id="vm-page-lhs">1</span> / <span id="vm-pages-lhs">?</span></span>
@@ -1045,7 +1055,31 @@ const viewerState = {
   rhsPage: 1,
   events: [],
   activeEventId: null,
+  zoom: 1.4,  // pdf.js render scale; updated by zoom controls
 };
+
+async function _viewerSetZoom(newZoom) {
+  viewerState.zoom = Math.max(0.5, Math.min(3.5, newZoom));
+  document.getElementById('vm-zoom-val').textContent = Math.round(viewerState.zoom * 100) + '%';
+  // re-render current pages on both sides
+  const promises = [];
+  if (viewerState.lhsPdf) promises.push(renderPdfPage('lhs', viewerState.lhsPage));
+  if (viewerState.rhsPdf) promises.push(renderPdfPage('rhs', viewerState.rhsPage));
+  await Promise.all(promises);
+}
+
+async function _viewerFitToWidth() {
+  const lhsPdf = viewerState.lhsPdf;
+  if (!lhsPdf) return;
+  try {
+    const page = await lhsPdf.getPage(viewerState.lhsPage);
+    const baseViewport = page.getViewport({scale: 1.0});
+    const paneBody = document.getElementById('vm-lhs-body');
+    const availW = paneBody.clientWidth - 40;  // 32px padding + 8px buffer
+    const fit = availW / baseViewport.width;
+    await _viewerSetZoom(fit);
+  } catch (_) {}
+}
 
 function _pairArtifactPath(state, pairId, basename) {
   const arts = state && state.artifacts || [];
@@ -1137,7 +1171,7 @@ async function renderPdfPage(side, pageNo) {
   document.getElementById('vm-page-' + side).textContent = pageNo;
   const body = document.getElementById('vm-' + side + '-body');
   const page = await pdf.getPage(pageNo);
-  const viewport = page.getViewport({scale: 1.4});
+  const viewport = page.getViewport({scale: viewerState.zoom});
   const wrap = document.createElement('div'); wrap.className = 'pdf-page-wrap';
   const num = document.createElement('div'); num.className = 'pdf-page-num'; num.textContent = 'p.' + pageNo + ' / ' + pdf.numPages;
   wrap.appendChild(num);
@@ -1229,13 +1263,15 @@ function renderViewerSidebar(filterQ) {
     row.dataset.evid = e.event_id;
     const lp = (e.lhs && e.lhs.page_no || e.lhs_page || '?');
     const rp = (e.rhs && e.rhs.page_no || e.rhs_page || '?');
+    const hasBbox = (e.lhs?.bbox || e.lhs_bbox || e.rhs?.bbox || e.rhs_bbox);
+    const noBboxBadge = hasBbox ? '' : ' <span title="Подсветка bbox недоступна — позиция не сматчилась" style="color:var(--amber);font-size:10px">⚠ no-bbox</span>';
     const stat = (e.status || '').toLowerCase();
     const quote = (e.lhs && e.lhs.quote || e.rhs && e.rhs.quote || '').slice(0, 160);
     const lrChip = e.last_review ?
       '<span class="chip chip-' + escapeHtml((e.last_review.decision||'').replace(/_/g,'-')) + '" style="font-size:9.5px">' + escapeHtml(e.last_review.decision||'') + '</span>' :
       '<button class="pill-link review-btn" data-evid="' + escapeHtml(e.event_id) + '" style="padding:1px 6px;font-size:10px">⚡ review</button>';
     row.innerHTML = '<span class="ev-chip chip chip-' + escapeHtml(stat) + '">' + escapeHtml(stat) + '</span>' +
-                    '<span class="ev-pages">L p.' + escapeHtml(String(lp)) + ' · R p.' + escapeHtml(String(rp)) + '</span>' +
+                    '<span class="ev-pages">L p.' + escapeHtml(String(lp)) + ' · R p.' + escapeHtml(String(rp)) + noBboxBadge + '</span>' +
                     '<div class="ev-quote">' + escapeHtml(quote) + (quote.length >= 160 ? '…' : '') + '</div>' +
                     '<div class="ev-id">' + escapeHtml((e.event_id || '').slice(-12)) + ' ' + lrChip + '</div>';
     row.addEventListener('click', () => jumpToEvent(e.event_id));
@@ -1343,6 +1379,9 @@ document.addEventListener('keydown', e => {
   if (e.key === 'k' || e.key === 'K') { e.preventDefault(); _viewerJumpRelative(-1); return; }
   if (e.key === 'a' || e.key === 'A') { e.preventDefault(); _viewerQuickDecide('confirmed'); return; }
   if (e.key === 'r' || e.key === 'R') { e.preventDefault(); _viewerQuickDecide('rejected'); return; }
+  if (e.key === '+' || e.key === '=') { e.preventDefault(); _viewerSetZoom(viewerState.zoom * 1.2); return; }
+  if (e.key === '-' || e.key === '_') { e.preventDefault(); _viewerSetZoom(viewerState.zoom / 1.2); return; }
+  if (e.key === '0') { e.preventDefault(); _viewerFitToWidth(); return; }
 });
 
 function _viewerJumpRelative(delta) {
@@ -1397,6 +1436,9 @@ document.querySelectorAll('#vm-pager-lhs button, #vm-pager-rhs button').forEach(
 });
 document.getElementById('vm-filter').addEventListener('input', e => renderViewerSidebar(e.target.value));
 document.getElementById('vm-hide-decided').addEventListener('change', () => renderViewerSidebar(document.getElementById('vm-filter').value));
+document.getElementById('vm-zoom-in').addEventListener('click', () => _viewerSetZoom(viewerState.zoom * 1.2));
+document.getElementById('vm-zoom-out').addEventListener('click', () => _viewerSetZoom(viewerState.zoom / 1.2));
+document.getElementById('vm-zoom-fit').addEventListener('click', () => _viewerFitToWidth());
 
 // -------- topic clusters (cross-pair dedup) --------
 async function loadTopics(batchId) {
