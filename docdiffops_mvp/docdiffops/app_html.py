@@ -385,6 +385,60 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
 .bulk-actions button { background: var(--panel-2); border: 1px solid var(--line); color: var(--fg); padding: 3px 10px; border-radius: 4px; font-size: 11.5px; cursor: pointer; }
 .bulk-actions button:hover { border-color: var(--blue); }
 .bulk-actions button.danger:hover { border-color: var(--red); color: var(--red); }
+
+/* ------------------- welcome empty state ------------------- */
+.welcome-empty { text-align: center; padding: 80px 24px; background: var(--panel); border: 1px dashed var(--line); border-radius: var(--rad-lg); }
+.welcome-empty .welcome-icon { font-size: 64px; opacity: 0.7; margin-bottom: 12px; }
+.welcome-empty h2 { margin: 0 0 8px; font-size: 22px; color: var(--strong); }
+.welcome-empty p { margin: 0 0 20px; color: var(--mute); max-width: 480px; margin-left: auto; margin-right: auto; line-height: 1.6; }
+.welcome-empty .btn-primary { padding: 12px 28px; font-size: 14px; }
+.welcome-empty .welcome-formats { margin-top: 24px; font-size: 11.5px; color: var(--mute); font-family: ui-monospace, monospace; }
+
+/* ------------------- skeleton loading ------------------- */
+.skel-card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--rad-lg); padding: 16px; }
+.skel-card .skel-line { height: 10px; background: linear-gradient(90deg, var(--panel-2) 0%, #1d2330 50%, var(--panel-2) 100%); background-size: 200% 100%; border-radius: 3px; margin: 5px 0; animation: skel-shimmer 1.4s infinite linear; }
+.skel-card .skel-line.short { width: 50%; }
+.skel-card .skel-line.med { width: 80%; }
+@keyframes skel-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+/* ------------------- status donut ------------------- */
+.status-donut { display: inline-flex; align-items: center; gap: 12px; }
+.status-donut svg { display: block; }
+.status-donut .legend { display: flex; flex-direction: column; gap: 3px; font-size: 11.5px; }
+.status-donut .legend .li { display: flex; align-items: center; gap: 6px; }
+.status-donut .legend .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+
+/* ------------------- severity ribbon on pair-card ------------------- */
+.pair-card { position: relative; }
+.pair-card.has-high::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+  background: linear-gradient(180deg, var(--red), rgba(229,72,77,0.4));
+  border-radius: var(--rad) 0 0 var(--rad);
+}
+.pair-card.has-medium::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+  background: linear-gradient(180deg, var(--amber), rgba(255,178,36,0.4));
+  border-radius: var(--rad) 0 0 var(--rad);
+}
+.pair-card { padding-left: 16px; }
+
+/* ------------------- viewer keyboard hint footer ------------------- */
+.viewer-modal .vm-foot { background: var(--panel-2); border-top: 1px solid var(--line); padding: 6px 14px; font-size: 11px; color: var(--mute); display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; flex-shrink: 0; }
+.viewer-modal .vm-foot .kb { display: inline-flex; align-items: center; gap: 4px; }
+.viewer-modal .vm-foot .kb kbd { background: var(--panel); border: 1px solid var(--line); border-radius: 3px; padding: 1px 5px; font-family: ui-monospace, monospace; font-size: 10.5px; color: var(--fg); }
+
+/* ------------------- active event pulse animation ------------------- */
+@keyframes bbox-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(76,195,255,0.7); }
+  50% { box-shadow: 0 0 0 6px rgba(76,195,255,0); }
+  100% { box-shadow: 0 0 0 0 rgba(76,195,255,0); }
+}
+.bbox-hi.is-active { animation: bbox-pulse 1.8s infinite ease-out; }
+.viewer-event-row.is-active { box-shadow: inset 4px 0 0 var(--blue); transition: box-shadow 0.2s ease; }
+
+/* ------------------- topbar stats counter ------------------- */
+.topbar-stats { color: var(--mute); font-size: 11.5px; font-family: ui-monospace, monospace; padding: 3px 8px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px; }
+.topbar-stats strong { color: var(--fg); font-weight: 600; }
 </style>
 </head>
 <body>
@@ -397,6 +451,7 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
   </div>
   <div class="ext">
     <span><span class="dot-online"></span> live</span>
+    <span id="topbar-stats" class="topbar-stats" title="Всего batches/events"></span>
     <a href="#" onclick="document.getElementById('help-modal').hidden=false;return false" title="Горячие клавиши">⌨️ Горячие клавиши</a>
     <a href="/docs" target="_blank">API ↗</a>
     <a href="https://github.com/agisota/diffs" target="_blank">GitHub ↗</a>
@@ -442,7 +497,15 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
       <button class="btn" id="btn-refresh-batches">↻ Обновить</button>
     </div>
     <div id="batches-grid" class="batches-grid"></div>
-    <div id="batches-empty" class="empty" style="display:none">Пока нет ни одного batch'а — создайте первый через Upload.</div>
+    <div id="batches-empty" class="welcome-empty" style="display:none">
+      <div class="welcome-icon">📋</div>
+      <h2>Здесь пока пусто</h2>
+      <p>Создай свой первый batch — загрузи 2 или больше документов, чтобы их сравнить.</p>
+      <button class="btn btn-primary" onclick="document.querySelector('[data-view=upload]').click()">
+        ↗ Перейти к загрузке
+      </button>
+      <div class="welcome-formats">Поддерживается: PDF, DOCX, PPTX, XLSX, HTML, TXT, MD, CSV, XML</div>
+    </div>
   </section>
 
   <!-- ============== batch detail view ============== -->
@@ -457,6 +520,7 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
     </div>
 
     <div id="detail-kpis" class="kpis"></div>
+    <div id="status-donut-block" style="margin-bottom:18px"></div>
     <div id="global-progress-block"></div>
 
     <div class="tabs-line">
@@ -593,6 +657,14 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
       <div class="vs-list" id="vm-events-list"></div>
     </div>
   </div>
+  <div class="vm-foot">
+    <span class="kb"><kbd>J</kbd>/<kbd>K</kbd> следующее/предыдущее</span>
+    <span class="kb"><kbd>A</kbd> принять</span>
+    <span class="kb"><kbd>R</kbd> отклонить</span>
+    <span class="kb"><kbd>+</kbd>/<kbd>−</kbd>/<kbd>0</kbd> zoom</span>
+    <span class="kb"><kbd>Esc</kbd> закрыть</span>
+    <span class="kb"><kbd>?</kbd> помощь</span>
+  </div>
   <div id="ev-popover" class="ev-popover" hidden></div>
 </div>
 
@@ -679,6 +751,48 @@ function renderStaged() {
 
 function escapeHtml(s) {
   return (s == null ? '' : String(s)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function docIcon(d) {
+  const ext = (d && d.ext || '').toLowerCase();
+  const t = (d && d.doc_type || '').toUpperCase();
+  if (ext === '.pdf' || t.includes('LEGAL') || t.includes('NPA')) return '📄';
+  if (ext === '.docx' || ext === '.doc') return '📝';
+  if (ext === '.pptx' || ext === '.ppt' || t === 'PRESENTATION') return '🎨';
+  if (ext === '.xlsx' || ext === '.xls' || ext === '.csv' || t === 'TABLE') return '📊';
+  if (ext === '.html' || ext === '.htm' || t === 'WEB_ARTICLE' || t === 'WEB_DIGEST') return '🌐';
+  if (ext === '.txt' || ext === '.md') return '📃';
+  return '📎';
+}
+
+function renderStatusDonut(events) {
+  const buckets = {};
+  for (const e of events || []) {
+    const s = (e.status || 'other').toLowerCase();
+    buckets[s] = (buckets[s] || 0) + 1;
+  }
+  const colors = {same: '#2ec27e', partial: '#ffb224', modified: '#ffb224',
+                  added: '#4cc3ff', deleted: '#e5484d', contradicts: '#e5484d',
+                  manual_review: '#e5484d', other: '#5b6473'};
+  const total = Object.values(buckets).reduce((a,b)=>a+b, 0);
+  if (!total) return '';
+  const r = 30, cx = 35, cy = 35;
+  const circ = 2 * Math.PI * r;
+  let offset = 0;
+  const segs = Object.entries(buckets).filter(([_,v])=>v>0).map(([k,v]) => {
+    const pct = v / total;
+    const len = circ * pct;
+    const s = `<circle cx='${cx}' cy='${cy}' r='${r}' fill='none' stroke='${colors[k]||colors.other}' stroke-width='10' stroke-dasharray='${len} ${circ}' stroke-dashoffset='${-offset}' transform='rotate(-90 ${cx} ${cy})'/>`;
+    offset += len;
+    return s;
+  }).join('');
+  const legend = Object.entries(buckets).filter(([_,v])=>v>0).map(([k,v]) =>
+    `<div class='li'><span class='dot' style='background:${colors[k]||colors.other}'></span><span>${escapeHtml(k)} <strong>${v}</strong></span></div>`
+  ).join('');
+  return `<div class='status-donut'>
+    <svg width='70' height='70'>${segs}<text x='35' y='40' text-anchor='middle' fill='var(--fg)' font-size='15' font-weight='600'>${total}</text></svg>
+    <div class='legend'>${legend}</div>
+  </div>`;
 }
 
 function addFiles(fileList) {
@@ -769,12 +883,29 @@ document.getElementById('btn-create').addEventListener('click', async () => {
 // -------- batch list --------
 async function refreshBatches() {
   const grid = document.getElementById('batches-grid');
-  grid.innerHTML = '<div class="empty"><span class="spinner"></span> Загрузка…</div>';
+  grid.innerHTML = Array(6).fill(0).map(() => `
+    <div class='skel-card'>
+      <div class='skel-line short'></div>
+      <div class='skel-line med' style='height:14px;margin-top:8px'></div>
+      <div class='skel-line'></div>
+      <div class='skel-line short'></div>
+      <div class='skel-line med'></div>
+    </div>
+  `).join('');
   try {
     const list = await fetch(BASE + '/batches').then(r => r.json());
     document.getElementById('batches-count').textContent = list.length;
     document.getElementById('batches-empty').style.display = list.length === 0 ? '' : 'none';
     grid.innerHTML = '';
+    // Update topbar dashboard counter
+    const stats = document.getElementById('topbar-stats');
+    if (stats && list.length) {
+      const totalEvents = list.reduce((a, b) => a + (b.diff_events_count || 0), 0);
+      const totalHigh = list.reduce((a, b) => a + (b.high_count || 0), 0);
+      stats.innerHTML = `📊 <strong>${list.length}</strong> batches · <strong>${totalEvents}</strong> events${totalHigh ? ` · <span style='color:var(--red)'>${totalHigh} high</span>` : ''}`;
+    } else if (stats) {
+      stats.textContent = '';
+    }
     list.sort((a, b) => (b.updated_at || b.created_at || '').localeCompare(a.updated_at || a.created_at || ''));
     for (const b of list) {
       const card = document.createElement('div');
@@ -816,6 +947,7 @@ async function openBatch(batchId) {
     document.getElementById('detail-title').textContent = s.title || '(untitled)';
     document.getElementById('detail-id').textContent = batchId;
     renderDetailKPIs(s);
+    document.getElementById('status-donut-block').innerHTML = renderStatusDonut(s.diff_events || []);
     renderGlobalProgress(s);
     renderEvents(s);
     renderPairs(s);
@@ -1100,13 +1232,13 @@ function renderPairs(s) {
     // Attach narrative from pair_summaries lookup (best-effort).
     p.narrative = p.narrative || (summariesByPair[p.pair_id] || {}).narrative;
     const card = document.createElement('div');
-    card.className = 'pair-card';
     const ev = (s.diff_events || []).filter(e => e.pair_id === p.pair_id);
     const same = ev.filter(e => e.status === 'same').length;
     const partial = ev.filter(e => e.status === 'partial').length;
     const added = ev.filter(e => e.status === 'added').length;
     const deleted = ev.filter(e => e.status === 'deleted').length;
     const high = ev.filter(e => e.severity === 'high').length;
+    card.className = 'pair-card' + (high > 0 ? ' has-high' : (ev.some(e => e.severity === 'medium') ? ' has-medium' : ''));
     const pairArts = arts.filter(a => (a.path || '').includes(p.pair_id));
     const pairEvents = ev;
     const reviewedCount = pairEvents.filter(e => e.last_review).length;
@@ -1121,9 +1253,9 @@ function renderPairs(s) {
         <div style='flex:1;min-width:0'>
           <div class='pair-id'>${escapeHtml(p.pair_id || '')}</div>
           <div class='docs'>
-            <span class='rank-${lhs.source_rank || 3}'>${escapeHtml(lhs.filename || lhs.doc_id || p.lhs_doc_id || '?')}</span>
+            <span class='rank-${lhs.source_rank || 3}'><span style='margin-right:4px'>${docIcon(lhs)}</span>${escapeHtml(lhs.filename || lhs.doc_id || p.lhs_doc_id || '?')}</span>
             <span class='arrow'>↔</span>
-            <span class='rank-${rhs.source_rank || 3}'>${escapeHtml(rhs.filename || rhs.doc_id || p.rhs_doc_id || '?')}</span>
+            <span class='rank-${rhs.source_rank || 3}'><span style='margin-right:4px'>${docIcon(rhs)}</span>${escapeHtml(rhs.filename || rhs.doc_id || p.rhs_doc_id || '?')}</span>
           </div>
         </div>
         <div style='text-align:right'>
@@ -1250,7 +1382,7 @@ function renderDocs(s) {
     card.className = 'doc-card';
     const rankLabel = ({1: 'official_npa', 2: 'departmental', 3: 'analytics'})[d.source_rank || 3];
     card.innerHTML = `
-      <div class='name'>${escapeHtml(d.filename || d.title || d.doc_id || '?')}</div>
+      <div class='name'><span style='margin-right:6px;font-size:16px'>${docIcon(d)}</span>${escapeHtml(d.filename || d.title || d.doc_id || '?')}</div>
       <div class='meta'>
         <div class='l'>doc_type</div><div class='v'>${escapeHtml(d.doc_type || '—')}</div>
         <div class='l'>rank</div><div class='v rank-${d.source_rank || 3}'>${d.source_rank || 3} (${rankLabel})</div>
@@ -2074,6 +2206,7 @@ function initFromHash() {
 window.addEventListener('hashchange', initFromHash);
 initFromHash();
 renderStaged();
+refreshBatches(); // warm up topbar stats
 </script>
 </body>
 </html>
