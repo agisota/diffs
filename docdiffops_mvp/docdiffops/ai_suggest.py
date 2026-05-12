@@ -165,9 +165,33 @@ def suggest_for_event(
 
     try:
         content = data["choices"][0]["message"]["content"]
-        parsed: dict[str, Any] = json.loads(content)
-    except (KeyError, json.JSONDecodeError) as e:
-        raise RuntimeError(f"LLM returned unparseable response: {e}") from e
+    except (KeyError, TypeError, IndexError) as e:
+        raise RuntimeError(f"LLM response missing choices[0].message.content: {e}") from e
+
+    # Try strict JSON first (when provider honoured response_format).
+    parsed: dict[str, Any] = {}
+    try:
+        parsed = json.loads(content)
+    except json.JSONDecodeError:
+        # Try to find a JSON object embedded in the text (some models wrap
+        # the JSON in markdown fences or prose).
+        import re
+        m = re.search(r"\{[^{}]*\"decision\"[^{}]*\}", content, re.DOTALL)
+        if m:
+            try:
+                parsed = json.loads(m.group(0))
+            except json.JSONDecodeError:
+                parsed = {}
+
+    # Fall back to keyword scan when content is a bare word like "confirmed".
+    if not isinstance(parsed, dict) or not parsed:
+        low = (content or "").lower()
+        if "confirmed" in low and "rejected" not in low:
+            parsed = {"decision": "confirmed", "confidence": 0.6, "reasoning": content.strip()[:500]}
+        elif "rejected" in low and "confirmed" not in low:
+            parsed = {"decision": "rejected", "confidence": 0.6, "reasoning": content.strip()[:500]}
+        else:
+            parsed = {"decision": "confirmed", "confidence": 0.4, "reasoning": (content or "").strip()[:500] or "LLM не смог распарсить ответ"}
 
     decision = (parsed.get("decision") or "").strip().lower()
     if decision not in {"confirmed", "rejected"}:
