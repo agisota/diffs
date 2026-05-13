@@ -2068,10 +2068,18 @@ document.addEventListener('keydown', e => {
   if (e.key === '0') { e.preventDefault(); _viewerFitToWidth(); return; }
 });
 document.addEventListener('keydown', e => {
-  // Don't intercept ? when typing in inputs
   const tag = (e.target && e.target.tagName || '').toUpperCase();
-  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
-  if (e.key === '?') { e.preventDefault(); document.getElementById('help-modal').hidden = false; }
+  const inInput = tag === 'INPUT' || tag === 'TEXTAREA';
+  const helpModal = document.getElementById('help-modal');
+  // Escape closes help modal first (higher priority than viewer Esc).
+  if (e.key === 'Escape' && helpModal && !helpModal.hidden) {
+    helpModal.hidden = true;
+    e.preventDefault();
+    e.stopPropagation();
+    return;
+  }
+  if (inInput) return;
+  if (e.key === '?') { e.preventDefault(); helpModal.hidden = false; }
 });
 
 function _viewerJumpRelative(delta) {
