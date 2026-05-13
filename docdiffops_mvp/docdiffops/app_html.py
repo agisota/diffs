@@ -249,6 +249,15 @@ main.app { padding: 28px 32px 64px; max-width: 1500px; margin: 0 auto; }
 
 mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
 
+/* HTML5 hidden attribute must beat any inline display value.
+   Without this, an element with hidden + inline style="display:flex" stays
+   visible — exactly the bug that made the help modal pop up on every load. */
+[hidden] { display: none !important; }
+
+/* ------------------- help modal ------------------- */
+#help-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 90; display: flex; align-items: center; justify-content: center; }
+#help-modal .help-card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 24px 28px; max-width: 520px; width: 90%; box-shadow: var(--shadow); }
+
 /* ------------------- inline viewer modal (M1) ------------------- */
 .viewer-modal { position: fixed; inset: 0; background: var(--bg); z-index: 60; display: flex; flex-direction: column; }
 .viewer-modal[hidden] { display: none; }
@@ -584,7 +593,7 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
 
 </main>
 
-<div id="help-modal" hidden style="position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:80;display:flex;align-items:center;justify-content:center" onclick="if(event.target===this)this.hidden=true">
+<div id="help-modal" hidden onclick="if(event.target===this)this.hidden=true">
   <div style="background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:24px 28px;max-width:520px;width:90%;box-shadow:var(--shadow)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
       <h3 style="margin:0;font-size:16px">⌨️ Горячие клавиши</h3>
