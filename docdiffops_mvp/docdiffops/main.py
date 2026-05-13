@@ -121,6 +121,37 @@ def delete_batch(batch_id: str):
     return {"batch_id": batch_id, "deleted": db_ok and fs_ok, "db": db_ok, "fs": fs_ok}
 
 
+class BatchUpdateRequest(BaseModel):
+    title: str | None = None
+
+
+@app.patch("/batches/{batch_id}")
+def update_batch(batch_id: str, req: BatchUpdateRequest):
+    """Update mutable batch fields (currently just title)."""
+    try:
+        state = load_state(batch_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="batch not found")
+    if req.title is not None:
+        state["title"] = req.title.strip()[:512]
+    save_state(batch_id, state)
+    # DB update.
+    from .state import _get_repo
+    repo = _get_repo()
+    if repo is not None:
+        try:
+            from .db import get_session
+            from .db.models import Batch
+            with get_session() as session:
+                row = session.get(Batch, batch_id)
+                if row is not None and req.title is not None:
+                    row.title = req.title.strip()[:512]
+                    session.flush()
+        except Exception as e:
+            logger.warning("batch rename: DB update failed: %s", e)
+    return {"batch_id": batch_id, "title": state.get("title")}
+
+
 @app.post("/batches")
 def create_batch_endpoint(req: CreateBatchRequest):
     state = create_batch(title=req.title, config=req.config)

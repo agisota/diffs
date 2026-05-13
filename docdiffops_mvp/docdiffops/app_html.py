@@ -495,6 +495,7 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
   <section id="view-batches" hidden>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;gap:12px;flex-wrap:wrap">
       <h2 class="section-title" style="margin:0">Все батчи (<span id="batches-count">0</span>)</h2>
+      <input id="batches-search" placeholder="Поиск по названию или ID…" style="flex:1;min-width:240px;max-width:480px;background:var(--panel);border:1px solid var(--line);color:var(--fg);padding:7px 10px;border-radius:5px;font-size:13px">
       <button class="btn" id="btn-refresh-batches">↻ Обновить</button>
     </div>
     <div id="batches-grid" class="batches-grid"></div>
@@ -511,6 +512,9 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
 
   <!-- ============== batch detail view ============== -->
   <section id="view-detail" hidden>
+    <div id="detail-dnd" style="display:none;position:fixed;inset:0;background:rgba(76,195,255,0.15);z-index:90;pointer-events:none;border:4px dashed var(--blue);align-items:center;justify-content:center">
+      <div style="background:var(--panel);padding:32px 40px;border-radius:12px;font-size:18px;color:var(--blue);font-weight:600">📤 Отпусти для добавления в batch</div>
+    </div>
     <div class="detail-head">
       <div>
         <button class="back" id="btn-back-to-batches">← Все батчи</button>
@@ -699,6 +703,40 @@ document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () =>
   if (b.dataset.view === 'batches') refreshBatches();
   showView(b.dataset.view);
 }));
+
+// -------- reviewer name overlay (replaces blocking prompt()) --------
+function _getReviewerName() {
+  const stored = localStorage.getItem('docdiff:reviewer');
+  if (stored) return Promise.resolve(stored);
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:120;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)';
+    overlay.innerHTML = `
+      <div style="background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:20px 24px;min-width:340px;box-shadow:var(--shadow)">
+        <div style="font-size:14px;font-weight:600;margin-bottom:6px">Ваше имя для review</div>
+        <div style="color:var(--mute);font-size:12px;margin-bottom:12px">Сохранится в браузере, спрошу один раз.</div>
+        <input id="rn-input" autofocus placeholder="например, Иванов" style="width:100%;background:var(--panel-2);border:1px solid var(--line);color:var(--fg);padding:8px 10px;border-radius:4px;font-size:13px">
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
+          <button id="rn-anon" style="background:transparent;border:1px solid var(--line);color:var(--mute);padding:6px 12px;border-radius:4px;font-size:12px;cursor:pointer">Анонимно</button>
+          <button id="rn-ok" style="background:linear-gradient(135deg,#4cc3ff,#2b95cc);border:0;color:#04111a;padding:6px 16px;border-radius:4px;font-size:12px;font-weight:600;cursor:pointer">OK</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    const inp = overlay.querySelector('#rn-input');
+    setTimeout(() => inp.focus(), 50);
+    const done = (name) => {
+      const finalName = (name || '').trim() || 'anonymous';
+      localStorage.setItem('docdiff:reviewer', finalName);
+      overlay.remove();
+      resolve(finalName);
+    };
+    overlay.querySelector('#rn-ok').addEventListener('click', () => done(inp.value));
+    overlay.querySelector('#rn-anon').addEventListener('click', () => done('anonymous'));
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') done(inp.value); if (e.key === 'Escape') done('anonymous'); });
+    overlay.addEventListener('click', e => { if (e.target === overlay) done('anonymous'); });
+  });
+}
 
 // -------- toast --------
 function toast(msg, kind) {
@@ -909,6 +947,54 @@ document.getElementById('btn-create').addEventListener('click', async () => {
 });
 
 // -------- batch list --------
+let batchesCache = [];
+
+function _filterAndRenderBatches() {
+  const q = (document.getElementById('batches-search')?.value || '').toLowerCase().trim();
+  const grid = document.getElementById('batches-grid');
+  const filtered = q
+    ? batchesCache.filter(b => ((b.title || '') + ' ' + (b.batch_id || '')).toLowerCase().includes(q))
+    : batchesCache;
+  document.getElementById('batches-count').textContent = q ? `${filtered.length}/${batchesCache.length}` : batchesCache.length;
+  document.getElementById('batches-empty').style.display = batchesCache.length === 0 ? '' : 'none';
+  grid.innerHTML = '';
+  filtered.sort((a, b) => (b.updated_at || b.created_at || '').localeCompare(a.updated_at || a.created_at || ''));
+  for (const b of filtered) {
+    const card = document.createElement('div');
+    card.className = 'batch-card';
+    const total = b.diff_events_count ?? b.events ?? 0;
+    const high = b.high_count ?? 0;
+    card.innerHTML = `
+      <div style='display:flex;justify-content:space-between;align-items:start;gap:8px'>
+        <div class='id'>${escapeHtml(b.batch_id || '')}</div>
+        <button class='batch-del' data-bid='${escapeHtml(b.batch_id)}' title='Удалить batch' style='background:transparent;border:0;color:var(--mute);cursor:pointer;font-size:13px;padding:0 4px'>🗑</button>
+      </div>
+      <div class='title'>${escapeHtml(b.title || '(untitled)')}</div>
+      <div class='row'><span>Документы</span><span class='v'>${b.documents_count ?? '—'}</span></div>
+      <div class='row'><span>Пар</span><span class='v'>${b.pair_runs_count ?? '—'}</span></div>
+      <div class='row'><span>Событий</span><span class='v'>${total}</span></div>
+      ${high ? `<div class='row'><span>High risk</span><span class='v' style='color:var(--red)'>${high}</span></div>` : ''}
+      <div class='when'>${escapeHtml(b.updated_at || b.created_at || '')}</div>
+    `;
+    card.addEventListener('click', () => openBatch(b.batch_id));
+    const delBtn = card.querySelector('button.batch-del');
+    if (delBtn) {
+      delBtn.addEventListener('click', async (ev) => {
+        ev.stopPropagation();
+        if (!confirm(`Удалить batch ${b.batch_id.slice(-8)} ${b.title ? '"' + b.title + '"' : ''}? Это удалит все документы, события, артефакты, review-decisions безвозвратно.`)) return;
+        try {
+          await fetch(BASE + '/batches/' + b.batch_id, {method: 'DELETE'}).then(r => r.json());
+          toast('Batch удалён: ' + b.batch_id.slice(-8), 'success');
+          refreshBatches();
+        } catch (e) {
+          toast('Удалить не удалось: ' + e.message, 'error');
+        }
+      });
+    }
+    grid.appendChild(card);
+  }
+}
+
 async function refreshBatches() {
   const grid = document.getElementById('batches-grid');
   grid.innerHTML = Array(6).fill(0).map(() => `
@@ -922,9 +1008,7 @@ async function refreshBatches() {
   `).join('');
   try {
     const list = await fetch(BASE + '/batches').then(r => r.json());
-    document.getElementById('batches-count').textContent = list.length;
-    document.getElementById('batches-empty').style.display = list.length === 0 ? '' : 'none';
-    grid.innerHTML = '';
+    batchesCache = list;
     // Update topbar dashboard counter
     const stats = document.getElementById('topbar-stats');
     if (stats && list.length) {
@@ -934,47 +1018,14 @@ async function refreshBatches() {
     } else if (stats) {
       stats.textContent = '';
     }
-    list.sort((a, b) => (b.updated_at || b.created_at || '').localeCompare(a.updated_at || a.created_at || ''));
-    for (const b of list) {
-      const card = document.createElement('div');
-      card.className = 'batch-card';
-      const total = b.diff_events_count ?? b.events ?? 0;
-      const high = b.high_count ?? 0;
-      card.innerHTML = `
-        <div style='display:flex;justify-content:space-between;align-items:start;gap:8px'>
-          <div class='id'>${escapeHtml(b.batch_id || '')}</div>
-          <button class='batch-del' data-bid='${escapeHtml(b.batch_id)}' title='Удалить batch' style='background:transparent;border:0;color:var(--mute);cursor:pointer;font-size:13px;padding:0 4px'>🗑</button>
-        </div>
-        <div class='title'>${escapeHtml(b.title || '(untitled)')}</div>
-        <div class='row'><span>Документы</span><span class='v'>${b.documents_count ?? '—'}</span></div>
-        <div class='row'><span>Пар</span><span class='v'>${b.pair_runs_count ?? '—'}</span></div>
-        <div class='row'><span>Событий</span><span class='v'>${total}</span></div>
-        ${high ? `<div class='row'><span>High risk</span><span class='v' style='color:var(--red)'>${high}</span></div>` : ''}
-        <div class='when'>${escapeHtml(b.updated_at || b.created_at || '')}</div>
-      `;
-      card.addEventListener('click', () => openBatch(b.batch_id));
-      const delBtn = card.querySelector('button.batch-del');
-      if (delBtn) {
-        delBtn.addEventListener('click', async (ev) => {
-          ev.stopPropagation();
-          if (!confirm(`Удалить batch ${b.batch_id.slice(-8)} ${b.title ? '"' + b.title + '"' : ''}? Это удалит все документы, события, артефакты, review-decisions безвозвратно.`)) return;
-          try {
-            await fetch(BASE + '/batches/' + b.batch_id, {method: 'DELETE'}).then(r => r.json());
-            toast('Batch удалён: ' + b.batch_id.slice(-8), 'success');
-            refreshBatches();
-          } catch (e) {
-            toast('Удалить не удалось: ' + e.message, 'error');
-          }
-        });
-      }
-      grid.appendChild(card);
-    }
+    _filterAndRenderBatches();
   } catch (e) {
     grid.innerHTML = `<div class='empty'>Ошибка загрузки: ${escapeHtml(e.message)}</div>`;
   }
 }
 
 document.getElementById('btn-refresh-batches').addEventListener('click', refreshBatches);
+document.getElementById('batches-search').addEventListener('input', () => _filterAndRenderBatches());
 document.getElementById('btn-back-to-batches').addEventListener('click', () => { showView('batches'); refreshBatches(); });
 
 // -------- batch detail --------
@@ -989,7 +1040,11 @@ async function openBatch(batchId) {
   try {
     const s = await fetch(BASE + '/batches/' + batchId).then(r => r.json());
     detailState = s;
-    document.getElementById('detail-title').textContent = s.title || '(untitled)';
+    const titleEl = document.getElementById('detail-title');
+    titleEl.textContent = s.title || '(untitled)';
+    titleEl.title = 'Клик для переименования';
+    titleEl.style.cursor = 'pointer';
+    titleEl.onclick = () => _renameBatchInline(s);
     document.getElementById('detail-id').textContent = batchId;
     renderDetailKPIs(s);
     document.getElementById('status-donut-block').innerHTML = renderStatusDonut(s.diff_events || []);
@@ -1028,6 +1083,23 @@ async function openBatch(batchId) {
 }
 
 document.getElementById('btn-refresh-detail').addEventListener('click', () => currentBatchId && openBatch(currentBatchId));
+
+async function _renameBatchInline(state) {
+  const cur = state.title || '';
+  const v = window.prompt('Новое название batch:', cur);
+  if (v === null) return;
+  try {
+    await fetch(BASE + '/batches/' + currentBatchId, {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({title: v})
+    }).then(r => r.json());
+    toast('Название обновлено', 'success');
+    openBatch(currentBatchId);
+  } catch (e) {
+    toast('Не удалось переименовать: ' + e.message, 'error');
+  }
+}
 
 function renderGlobalProgress(s) {
   const block = document.getElementById('global-progress-block');
@@ -1399,8 +1471,7 @@ async function bulkReview(pairId, statusFilter, severityFilter, decision) {
   if (!evs.length) { toast('Нет событий для применения', 'info'); return; }
   const label = `${decision === 'confirmed' ? 'Принять' : 'Отклонить'} ${evs.length} событий`;
   if (!confirm(label + '?')) return;
-  const name = localStorage.getItem('docdiff:reviewer') || prompt('Your name:', '') || 'anonymous';
-  localStorage.setItem('docdiff:reviewer', name);
+  const name = await _getReviewerName();
   toast(label + '…', 'info');
   let ok = 0, fail = 0;
   await Promise.all(evs.map(async e => {
@@ -1983,8 +2054,7 @@ function showEventPopover(evId, anchorEl) {
   pop.hidden = false;
   pop.querySelector('.pop-close').addEventListener('click', () => { pop.hidden = true; });
   const submit = async (decision) => {
-    const name = localStorage.getItem('docdiff:reviewer') || prompt('Your name (saved for next time):', '') || 'anonymous';
-    localStorage.setItem('docdiff:reviewer', name);
+    const name = await _getReviewerName();
     const comment = pop.querySelector('textarea').value;
     const btns = pop.querySelectorAll('button');
     btns.forEach(b => b.disabled = true);
@@ -2118,8 +2188,7 @@ async function _viewerQuickDecide(decision) {
   const evId = viewerState.activeEventId;
   const e = viewerState.events.find(x => x.event_id === evId);
   if (!e) return;
-  const name = localStorage.getItem('docdiff:reviewer') || prompt('Your name (saved for next time):', '') || 'anonymous';
-  localStorage.setItem('docdiff:reviewer', name);
+  const name = await _getReviewerName();
   try {
     const r = await fetch(BASE + '/events/' + evId + '/review', {
       method: 'POST',
@@ -2267,6 +2336,46 @@ function renderV10Bundle(s) {
   `;
   block.hidden = false;
 }
+
+// -------- drag-and-drop additions to existing batch (detail view) --------
+let _dndCounter = 0;
+window.addEventListener('dragenter', e => {
+  if (currentView !== 'detail' || !currentBatchId) return;
+  if (!e.dataTransfer || !Array.from(e.dataTransfer.types).includes('Files')) return;
+  _dndCounter++;
+  const dnd = document.getElementById('detail-dnd');
+  if (dnd) dnd.style.display = 'flex';
+});
+window.addEventListener('dragleave', e => {
+  _dndCounter--;
+  if (_dndCounter <= 0) {
+    _dndCounter = 0;
+    const dnd = document.getElementById('detail-dnd');
+    if (dnd) dnd.style.display = 'none';
+  }
+});
+window.addEventListener('dragover', e => {
+  if (currentView !== 'detail' || !currentBatchId) return;
+  e.preventDefault();
+});
+window.addEventListener('drop', async e => {
+  if (currentView !== 'detail' || !currentBatchId) return;
+  e.preventDefault();
+  _dndCounter = 0;
+  const dnd = document.getElementById('detail-dnd');
+  if (dnd) dnd.style.display = 'none';
+  if (!e.dataTransfer || !e.dataTransfer.files.length) return;
+  const fd = new FormData();
+  for (const f of e.dataTransfer.files) fd.append('files', f, f.name);
+  toast(`Загружается ${e.dataTransfer.files.length} файлов в batch…`, 'info');
+  try {
+    const r = await fetch(BASE + '/batches/' + currentBatchId + '/documents', {method: 'POST', body: fd}).then(r => r.json());
+    toast(`Добавлено ${(r.added || []).length} файлов. Прогон pipeline для применения.`, 'success');
+    openBatch(currentBatchId);
+  } catch (err) {
+    toast('Ошибка добавления: ' + err.message, 'error');
+  }
+});
 
 // -------- init --------
 function initFromHash() {
