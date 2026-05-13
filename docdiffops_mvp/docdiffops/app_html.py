@@ -2071,12 +2071,23 @@ document.addEventListener('keydown', e => {
   const tag = (e.target && e.target.tagName || '').toUpperCase();
   const inInput = tag === 'INPUT' || tag === 'TEXTAREA';
   const helpModal = document.getElementById('help-modal');
-  // Escape closes help modal first (higher priority than viewer Esc).
+  // Escape closes (in priority order) help modal → stuck toasts → viewer.
   if (e.key === 'Escape' && helpModal && !helpModal.hidden) {
     helpModal.hidden = true;
     e.preventDefault();
     e.stopPropagation();
     return;
+  }
+  // Escape also dismisses all persistent toasts (error toasts never
+  // auto-close, so the user needs a way out besides hunting for the ✕).
+  if (e.key === 'Escape') {
+    const wrap = document.getElementById('toast-wrap');
+    if (wrap && wrap.children.length > 0) {
+      Array.from(wrap.children).forEach(t => t.remove());
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
   }
   if (inInput) return;
   if (e.key === '?') { e.preventDefault(); helpModal.hidden = false; }
