@@ -171,6 +171,10 @@ main.app { padding: 28px 32px 64px; max-width: 1500px; margin: 0 auto; }
 .short-id { font-family: ui-monospace, monospace; font-size: 11.5px; color: var(--mute); }
 
 /* ------------------- pair viewer ------------------- */
+.pairs-toolbar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.pairs-toolbar input, .pairs-toolbar select { background: var(--panel); border: 1px solid var(--line); color: var(--fg); padding: 7px 10px; border-radius: 5px; font-size: 13px; }
+.pairs-toolbar input { flex: 1; min-width: 200px; }
+.pairs-toolbar .count { color: var(--mute); font-size: 12px; align-self: center; }
 .pairs-list { display: grid; gap: 10px; }
 .pair-card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--rad); padding: 12px 14px; transition: all 0.15s ease; }
 .pair-card:hover { border-color: var(--blue-dim); transform: translateY(-1px); }
@@ -257,6 +261,13 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
 /* ------------------- help modal ------------------- */
 #help-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 90; display: flex; align-items: center; justify-content: center; }
 #help-modal .help-card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 24px 28px; max-width: 520px; width: 90%; box-shadow: var(--shadow); }
+
+/* ------------------- settings modal ------------------- */
+#settings-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 90; display: flex; align-items: center; justify-content: center; }
+#settings-modal .help-card { min-width: 340px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 24px 28px; max-width: 520px; width: 90%; box-shadow: var(--shadow); }
+.settings-row { display: flex; flex-direction: column; gap: 4px; margin: 10px 0; }
+.settings-row label { font-size: 11.5px; color: var(--mute); text-transform: uppercase; letter-spacing: 0.05em; }
+.settings-row input, .settings-row select { background: var(--panel-2); border: 1px solid var(--line); color: var(--fg); padding: 7px 10px; border-radius: 4px; font-size: 13px; }
 
 /* ------------------- inline viewer modal (M1) ------------------- */
 .viewer-modal { position: fixed; inset: 0; background: var(--bg); z-index: 60; display: flex; flex-direction: column; }
@@ -347,10 +358,23 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
 .viewer-modal .vm-sidebar .vs-filter input { width: 100%; background: var(--panel-2); border: 1px solid var(--line); color: var(--fg); padding: 8px 10px; border-radius: 4px; font-size: 12.5px; }
 .viewer-modal .vm-sidebar .vs-list { flex: 1; min-height: 0; overflow: auto; }
 .viewer-event-row {
+  position: relative;
   padding: 8px 10px; border-bottom: 1px solid var(--line); cursor: pointer; font-size: 12.5px;
   display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: start;
 }
 .viewer-event-row:hover { background: var(--panel-2); }
+.viewer-event-row .hover-preview {
+  position: absolute; right: 100%; top: 0; margin-right: 8px;
+  background: var(--panel); border: 1px solid var(--blue); border-radius: 6px;
+  padding: 10px 12px; min-width: 280px; max-width: 380px;
+  box-shadow: var(--shadow); z-index: 70; display: none;
+  font-size: 12.5px; line-height: 1.5; pointer-events: none;
+}
+.viewer-event-row:hover .hover-preview { display: block; }
+.viewer-event-row .hover-preview .label { color: var(--mute); font-size: 10.5px; text-transform: uppercase; margin-bottom: 2px; }
+.viewer-event-row .hover-preview .q { background: var(--bg); padding: 6px 8px; border-radius: 3px; border-left: 2px solid var(--gray); margin: 3px 0; max-height: 6em; overflow: hidden; }
+.viewer-event-row .hover-preview .q.lhs { border-left-color: var(--red); }
+.viewer-event-row .hover-preview .q.rhs { border-left-color: var(--green); }
 .viewer-event-row.is-active { background: rgba(76,195,255,0.10); border-left: 3px solid var(--blue); padding-left: 7px; }
 .viewer-event-row .ev-chip { grid-row: 1; grid-column: 1; }
 .viewer-event-row .ev-pages { grid-row: 1; grid-column: 2; color: var(--mute); font-size: 11px; text-align: right; font-family: ui-monospace, monospace; }
@@ -462,6 +486,7 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
   <div class="ext">
     <span><span class="dot-online"></span> live</span>
     <span id="topbar-stats" class="topbar-stats" title="Всего batches/events"></span>
+    <a href="#" onclick="document.getElementById('settings-modal').hidden=false;return false" title="Настройки">⚙ Настройки</a>
     <a href="#" onclick="document.getElementById('help-modal').hidden=false;return false" title="Горячие клавиши">⌨️ Горячие клавиши</a>
     <a href="/docs" target="_blank">API ↗</a>
     <a href="https://github.com/agisota/diffs" target="_blank">GitHub ↗</a>
@@ -570,6 +595,18 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
     </div>
 
     <div id="dtab-pairs" class="dtab" hidden>
+      <div class="pairs-toolbar">
+        <input id="pairs-filter" placeholder="🔍 Поиск по filename / pair_id / narrative…">
+        <select id="pairs-sort">
+          <option value="updated">по обновлению (новые)</option>
+          <option value="score-desc">по score (высокий)</option>
+          <option value="score-asc">по score (низкий)</option>
+          <option value="events-desc">по количеству событий</option>
+          <option value="high-desc">по high-risk</option>
+          <option value="filename">по имени файла</option>
+        </select>
+        <span class="count" id="pairs-count"></span>
+      </div>
       <div id="pairs-list" class="pairs-list"></div>
     </div>
 
@@ -609,9 +646,39 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
       <tr><td style="padding:4px 12px 4px 0"><kbd>0</kbd></td><td>Fit-to-width</td></tr>
       <tr><td style="padding:4px 12px 4px 0"><kbd>Esc</kbd></td><td>Закрыть viewer</td></tr>
       <tr><td colspan="2" style="padding:10px 0 4px;color:var(--mute);font-size:11px;text-transform:uppercase;letter-spacing:0.06em">Везде</td></tr>
-      <tr><td style="padding:4px 12px 4px 0"><kbd>?</kbd></td><td>Эта подсказка</td></tr>
+      <tr><td style="padding:4px 12px 4px 0"><kbd>H</kbd> или <kbd>?</kbd></td><td>Эта подсказка</td></tr>
     </table>
     <div style="margin-top:14px;color:var(--mute);font-size:11.5px">A/R автоматически прыгают к следующему pending событию. Принятые/отклонённые правки скрыты по умолчанию (галка «hide accepted/rejected» в sidebar).</div>
+  </div>
+</div>
+
+<div id="settings-modal" hidden onclick="if(event.target===this)this.hidden=true">
+  <div class="help-card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <h3 style="margin:0;font-size:16px">⚙ Настройки</h3>
+      <button style="background:transparent;border:0;color:var(--mute);font-size:18px;cursor:pointer" onclick="document.getElementById('settings-modal').hidden=true">✕</button>
+    </div>
+    <div class="settings-row">
+      <label>Имя reviewer'а</label>
+      <input id="settings-reviewer" placeholder="ваше имя для review">
+    </div>
+    <div class="settings-row">
+      <label>Сортировка пар по умолчанию</label>
+      <select id="settings-default-sort">
+        <option value="updated">по обновлению</option>
+        <option value="score-desc">по score (высокий)</option>
+        <option value="events-desc">по количеству событий</option>
+        <option value="high-desc">по high-risk</option>
+      </select>
+    </div>
+    <div class="settings-row">
+      <label>Очистить локальные данные</label>
+      <button id="settings-clear" style="background:rgba(229,72,77,0.12);border:1px solid var(--red);color:var(--red);padding:6px 12px;border-radius:4px;font-size:12px;cursor:pointer">🗑 Очистить bookmarks, reviewer name, preferences</button>
+    </div>
+    <div style="margin-top:14px;display:flex;justify-content:flex-end;gap:8px">
+      <button onclick="document.getElementById('settings-modal').hidden=true" style="background:transparent;border:1px solid var(--line);color:var(--mute);padding:6px 14px;border-radius:4px;font-size:12px;cursor:pointer">Отмена</button>
+      <button id="settings-save" style="background:linear-gradient(135deg,#4cc3ff,#2b95cc);border:0;color:#04111a;padding:6px 18px;border-radius:4px;font-size:12px;font-weight:600;cursor:pointer">Сохранить</button>
+    </div>
   </div>
 </div>
 
@@ -702,6 +769,7 @@ function showView(name) {
   }
   if (name !== 'detail') currentBatchId = null;
   currentView = name;
+  if (name !== 'detail') document.title = 'DocDiffOps';
   // hash sync
   if (name === 'detail' && currentBatchId) location.hash = '#batch/' + currentBatchId;
   else if (name === 'batches') location.hash = '#batches';
@@ -1082,6 +1150,7 @@ async function openBatch(batchId) {
     titleEl.title = 'Клик для переименования';
     titleEl.style.cursor = 'pointer';
     titleEl.onclick = () => _renameBatchInline(s);
+    document.title = (s.title || 'untitled') + ' · DocDiffOps';
     document.getElementById('detail-id').textContent = batchId;
     renderDetailKPIs(s);
     document.getElementById('status-donut-block').innerHTML = renderStatusDonut(s.diff_events || []);
@@ -1400,103 +1469,182 @@ function renderReviewHistory(container, history) {
 });
 
 // -------- pairs --------
+let pairsRenderCtx = null;
+
 function renderPairs(s) {
-  const docs = (s.documents || []).reduce((m, d) => (m[d.doc_id] = d, m), {});
+  // M+: cache the full context so filter/sort can re-render without re-fetching.
+  pairsRenderCtx = {
+    docs: (s.documents || []).reduce((m, d) => (m[d.doc_id] = d, m), {}),
+    pairs: s.pair_runs || s.pairs || [],
+    arts: (s.artifacts || []),
+    summariesByPair: (s.pair_summaries || []).reduce((m, x) => (m[x.pair_id] = x, m), {}),
+    allEvents: s.diff_events || [],
+  };
+  _renderPairsFiltered();
+}
+
+function _renderPairsFiltered() {
+  if (!pairsRenderCtx) return;
+  const ctx = pairsRenderCtx;
   const list = document.getElementById('pairs-list');
-  list.innerHTML = '';
-  // Pair summaries are stored separately as artifacts; build a quick
-  // lookup so we can attach narrative text to each pair card.
-  const summariesByPair = (s.pair_summaries || []).reduce((m, x) => (m[x.pair_id] = x, m), {});
-  const pairs = s.pair_runs || s.pairs || [];
-  if (!pairs.length) { list.innerHTML = "<div class='empty' data-icon='💤'>(пока нет пар)</div>"; return; }
-  const arts = (s.artifacts || []);
-  for (const p of pairs) {
-    const lhs = docs[p.lhs_doc_id] || {};
-    const rhs = docs[p.rhs_doc_id] || {};
-    // Attach narrative from pair_summaries lookup (best-effort).
-    p.narrative = p.narrative || (summariesByPair[p.pair_id] || {}).narrative;
-    const card = document.createElement('div');
-    const ev = (s.diff_events || []).filter(e => e.pair_id === p.pair_id);
-    const same = ev.filter(e => e.status === 'same').length;
-    const partial = ev.filter(e => e.status === 'partial').length;
-    const added = ev.filter(e => e.status === 'added').length;
-    const deleted = ev.filter(e => e.status === 'deleted').length;
-    const high = ev.filter(e => e.severity === 'high').length;
-    card.className = 'pair-card' + (high > 0 ? ' has-high' : (ev.some(e => e.severity === 'medium') ? ' has-medium' : ''));
-    const pairArts = arts.filter(a => (a.path || '').includes(p.pair_id));
-    const pairEvents = ev;
-    const reviewedCount = pairEvents.filter(e => e.last_review).length;
-    const confCount = pairEvents.filter(e => e.last_review && e.last_review.decision === 'confirmed').length;
-    const rejCount = pairEvents.filter(e => e.last_review && e.last_review.decision === 'rejected').length;
-    const totalEv = pairEvents.length;
-    const progressPct = totalEv > 0 ? Math.round((confCount + rejCount) / totalEv * 100) : 0;
-    const confW = totalEv > 0 ? (confCount / totalEv * 100) : 0;
-    const rejW = totalEv > 0 ? (rejCount / totalEv * 100) : 0;
-    card.innerHTML = `
-      <div class='head'>
-        <div style='flex:1;min-width:0'>
-          <div class='pair-id'>${escapeHtml(p.pair_id || '')}</div>
-          <div class='docs'>
-            <span class='rank-${lhs.source_rank || 3}'><span style='margin-right:4px'>${docIcon(lhs)}</span>${escapeHtml(lhs.filename || lhs.doc_id || p.lhs_doc_id || '?')}</span>
-            <span class='arrow'>↔</span>
-            <span class='rank-${rhs.source_rank || 3}'><span style='margin-right:4px'>${docIcon(rhs)}</span>${escapeHtml(rhs.filename || rhs.doc_id || p.rhs_doc_id || '?')}</span>
-          </div>
-        </div>
-        <div style='text-align:right'>
-          ${(summariesByPair[p.pair_id] || {}).score_pct != null ? `
-            <div style='font-size:24px;font-weight:600;line-height:1;color:${(summariesByPair[p.pair_id].score_pct >= 70 ? 'var(--green)' : summariesByPair[p.pair_id].score_pct >= 40 ? 'var(--amber)' : 'var(--red)')}'>${summariesByPair[p.pair_id].score_pct}</div>
-            <div class='muted' style='font-size:10px;text-transform:uppercase;letter-spacing:0.06em'>${escapeHtml((summariesByPair[p.pair_id].score_band||''))}</div>
-          ` : `<div class='muted mono' style='font-size:12px'>${ev.length} events</div>`}
-        </div>
-      </div>
-      ${p.narrative ? `<div style='margin-top:8px;padding:10px 12px;background:rgba(76,195,255,0.05);border-left:3px solid var(--blue);border-radius:4px;font-size:13px;line-height:1.5'>${escapeHtml(p.narrative)}</div>` : ''}
-      <div class='stats'>
-        <div>same <span>${same}</span></div>
-        <div>partial <span>${partial}</span></div>
-        <div>+ <span>${added}</span></div>
-        <div>− <span>${deleted}</span></div>
-        ${high ? `<div style='color:var(--red)'>high <span style='color:var(--red)'>${high}</span></div>` : ''}
-        ${reviewedCount > 0 ? `<div style='color:var(--blue)'>reviewed <span style='color:var(--blue)'>${reviewedCount}</span></div>` : ''}
-      </div>
-      ${totalEv > 0 ? `<div class='review-progress'>
-        <div class='pbar'>
-          <div class='seg-conf' style='width:${confW}%'></div>
-          <div class='seg-rej' style='width:${rejW}%'></div>
-        </div>
-        <div class='plabel'><span>Прогресс review</span><span class='pct'>${confCount + rejCount} / ${totalEv} <span style='color:var(--mute)'>(${progressPct}%)</span></span></div>
-      </div>` : ''}
-      ${totalEv > 0 ? `<div class='bulk-actions'>
-        <button data-bulk-pair='${escapeHtml(p.pair_id)}' data-bulk-status='same' data-bulk-decision='confirmed' title='Принять все same'>✓ same (${pairEvents.filter(e => e.status === 'same' && !e.last_review).length})</button>
-        <button data-bulk-pair='${escapeHtml(p.pair_id)}' data-bulk-severity='low' data-bulk-decision='confirmed' title='Принять все low severity'>✓ low (${pairEvents.filter(e => (e.severity || 'low') === 'low' && !e.last_review).length})</button>
-        <button data-bulk-pair='${escapeHtml(p.pair_id)}' data-bulk-status='added' data-bulk-decision='rejected' class='danger' title='Отклонить все added'>✗ added (${pairEvents.filter(e => e.status === 'added' && !e.last_review).length})</button>
-      </div>` : ''}
-      <div class='thumbs' data-pair-id='${escapeHtml(p.pair_id)}'>
-        <div class='thumb' data-side='lhs' data-doc='${escapeHtml(p.lhs_doc_id || '')}'><span class='side-lbl lhs'>LHS</span><span class='thumb-empty'>…</span></div>
-        <div class='thumb' data-side='rhs' data-doc='${escapeHtml(p.rhs_doc_id || '')}'><span class='side-lbl rhs'>RHS</span><span class='thumb-empty'>…</span></div>
-      </div>
-      <button data-viewer-pair='${escapeHtml(p.pair_id)}' style='margin-top:12px;width:100%;padding:10px 16px;background:linear-gradient(135deg, #4cc3ff, #2b95cc);color:#04111a;border:0;border-radius:6px;font-weight:600;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px'>
-        📖 Открыть документы с подсветкой правок
-      </button>
-      <div class='links' style='margin-top:8px'>
-        ${pairArts.map(a => `<a class='pill-link' href='${BASE}/batches/${currentBatchId}/download/${escapeHtml(a.path)}' target='_blank'>${escapeHtml(a.type || 'download')} ↓</a>`).join('')}
-        <button class='pill-link' data-pair='${escapeHtml(p.pair_id)}'>view events →</button>
-        ${reviewedCount > 0 ? `<a class='pill-link' href='${BASE}/batches/${currentBatchId}/pair/${escapeHtml(p.pair_id)}/merged.docx' target='_blank' title='Скачать итоговый DOCX с применёнными accept/reject решениями'>📥 merged</a>` : ''}
-      </div>
-    `;
-    card.querySelector('button[data-pair]').addEventListener('click', () => {
-      document.getElementById('evt-pair').value = p.pair_id;
-      document.querySelector('.tab-line[data-detail-tab="events"]').click();
-      applyEventsFilter();
-    });
-    const viewerBtn = card.querySelector('button[data-viewer-pair]');
-    if (viewerBtn) viewerBtn.addEventListener('click', () => openInlineViewer(p.pair_id));
-    card.querySelectorAll('button[data-bulk-pair]').forEach(bb => {
-      bb.addEventListener('click', () => bulkReview(
-        bb.dataset.bulkPair, bb.dataset.bulkStatus || null, bb.dataset.bulkSeverity || null, bb.dataset.bulkDecision
-      ));
-    });
-    list.appendChild(card);
+
+  // Apply saved default sort preference if user hasn't changed selector
+  const sortSel = document.getElementById('pairs-sort');
+  if (sortSel && !sortSel.dataset.userTouched) {
+    const def = localStorage.getItem('docdiff:default_sort');
+    if (def) sortSel.value = def;
   }
+
+  const q = (document.getElementById('pairs-filter')?.value || '').toLowerCase().trim();
+  const sortBy = sortSel?.value || 'updated';
+  let pairs = ctx.pairs.slice();
+
+  // Filter
+  if (q) {
+    pairs = pairs.filter(p => {
+      const lhs = ctx.docs[p.lhs_doc_id] || {};
+      const rhs = ctx.docs[p.rhs_doc_id] || {};
+      const sm = ctx.summariesByPair[p.pair_id] || {};
+      const blob = [
+        p.pair_id, lhs.filename, rhs.filename, lhs.doc_id, rhs.doc_id,
+        sm.narrative, p.lhs_doc_id, p.rhs_doc_id,
+      ].filter(Boolean).join(' ').toLowerCase();
+      return blob.includes(q);
+    });
+  }
+
+  // Sort
+  const evCount = pid => ctx.allEvents.filter(e => e.pair_id === pid);
+  const highCount = pid => evCount(pid).filter(e => e.severity === 'high').length;
+  const score = pid => (ctx.summariesByPair[pid] || {}).score_pct ?? 50;
+  pairs.sort((a, b) => {
+    switch (sortBy) {
+      case 'score-desc': return score(b.pair_id) - score(a.pair_id);
+      case 'score-asc':  return score(a.pair_id) - score(b.pair_id);
+      case 'events-desc': return evCount(b.pair_id).length - evCount(a.pair_id).length;
+      case 'high-desc':   return highCount(b.pair_id) - highCount(a.pair_id);
+      case 'filename': {
+        const la = (ctx.docs[a.lhs_doc_id]?.filename || '').toLowerCase();
+        const lb = (ctx.docs[b.lhs_doc_id]?.filename || '').toLowerCase();
+        return la.localeCompare(lb);
+      }
+      default: return (b.finished_at || '').localeCompare(a.finished_at || '');
+    }
+  });
+
+  document.getElementById('pairs-count').textContent = q
+    ? `${pairs.length} / ${ctx.pairs.length} пар`
+    : `${ctx.pairs.length} пар`;
+
+  list.innerHTML = '';
+  if (!pairs.length) {
+    list.innerHTML = q
+      ? `<div class='empty' data-icon='🔍'>Ничего не найдено по запросу «${escapeHtml(q)}»</div>`
+      : `<div class='empty' data-icon='💤'>(пока нет пар)</div>`;
+    return;
+  }
+
+  for (const p of pairs) {
+    _appendPairCard(p, ctx, list);
+  }
+
+  // Thumbnails lazy load
+  _wirePairThumbnails();
+}
+
+function _appendPairCard(p, ctx, list) {
+  const docs = ctx.docs;
+  const arts = ctx.arts;
+  const summariesByPair = ctx.summariesByPair;
+  const allEvents = ctx.allEvents;
+  const lhs = docs[p.lhs_doc_id] || {};
+  const rhs = docs[p.rhs_doc_id] || {};
+  // Attach narrative from pair_summaries lookup (best-effort).
+  p.narrative = p.narrative || (summariesByPair[p.pair_id] || {}).narrative;
+  const card = document.createElement('div');
+  const ev = allEvents.filter(e => e.pair_id === p.pair_id);
+  const same = ev.filter(e => e.status === 'same').length;
+  const partial = ev.filter(e => e.status === 'partial').length;
+  const added = ev.filter(e => e.status === 'added').length;
+  const deleted = ev.filter(e => e.status === 'deleted').length;
+  const high = ev.filter(e => e.severity === 'high').length;
+  card.className = 'pair-card' + (high > 0 ? ' has-high' : (ev.some(e => e.severity === 'medium') ? ' has-medium' : ''));
+  const pairArts = arts.filter(a => (a.path || '').includes(p.pair_id));
+  const pairEvents = ev;
+  const reviewedCount = pairEvents.filter(e => e.last_review).length;
+  const confCount = pairEvents.filter(e => e.last_review && e.last_review.decision === 'confirmed').length;
+  const rejCount = pairEvents.filter(e => e.last_review && e.last_review.decision === 'rejected').length;
+  const totalEv = pairEvents.length;
+  const progressPct = totalEv > 0 ? Math.round((confCount + rejCount) / totalEv * 100) : 0;
+  const confW = totalEv > 0 ? (confCount / totalEv * 100) : 0;
+  const rejW = totalEv > 0 ? (rejCount / totalEv * 100) : 0;
+  card.innerHTML = `
+    <div class='head'>
+      <div style='flex:1;min-width:0'>
+        <div class='pair-id'>${escapeHtml(p.pair_id || '')}</div>
+        <div class='docs'>
+          <span class='rank-${lhs.source_rank || 3}'><span style='margin-right:4px'>${docIcon(lhs)}</span>${escapeHtml(lhs.filename || lhs.doc_id || p.lhs_doc_id || '?')}</span>
+          <span class='arrow'>↔</span>
+          <span class='rank-${rhs.source_rank || 3}'><span style='margin-right:4px'>${docIcon(rhs)}</span>${escapeHtml(rhs.filename || rhs.doc_id || p.rhs_doc_id || '?')}</span>
+        </div>
+      </div>
+      <div style='text-align:right'>
+        ${(summariesByPair[p.pair_id] || {}).score_pct != null ? `
+          <div style='font-size:24px;font-weight:600;line-height:1;color:${(summariesByPair[p.pair_id].score_pct >= 70 ? 'var(--green)' : summariesByPair[p.pair_id].score_pct >= 40 ? 'var(--amber)' : 'var(--red)')}'>${summariesByPair[p.pair_id].score_pct}</div>
+          <div class='muted' style='font-size:10px;text-transform:uppercase;letter-spacing:0.06em'>${escapeHtml((summariesByPair[p.pair_id].score_band||''))}</div>
+        ` : `<div class='muted mono' style='font-size:12px'>${ev.length} events</div>`}
+      </div>
+    </div>
+    ${p.narrative ? `<div style='margin-top:8px;padding:10px 12px;background:rgba(76,195,255,0.05);border-left:3px solid var(--blue);border-radius:4px;font-size:13px;line-height:1.5'>${escapeHtml(p.narrative)}</div>` : ''}
+    <div class='stats'>
+      <div>same <span>${same}</span></div>
+      <div>partial <span>${partial}</span></div>
+      <div>+ <span>${added}</span></div>
+      <div>− <span>${deleted}</span></div>
+      ${high ? `<div style='color:var(--red)'>high <span style='color:var(--red)'>${high}</span></div>` : ''}
+      ${reviewedCount > 0 ? `<div style='color:var(--blue)'>reviewed <span style='color:var(--blue)'>${reviewedCount}</span></div>` : ''}
+    </div>
+    ${totalEv > 0 ? `<div class='review-progress'>
+      <div class='pbar'>
+        <div class='seg-conf' style='width:${confW}%'></div>
+        <div class='seg-rej' style='width:${rejW}%'></div>
+      </div>
+      <div class='plabel'><span>Прогресс review</span><span class='pct'>${confCount + rejCount} / ${totalEv} <span style='color:var(--mute)'>(${progressPct}%)</span></span></div>
+    </div>` : ''}
+    ${totalEv > 0 ? `<div class='bulk-actions'>
+      <button data-bulk-pair='${escapeHtml(p.pair_id)}' data-bulk-status='same' data-bulk-decision='confirmed' title='Принять все same'>✓ same (${pairEvents.filter(e => e.status === 'same' && !e.last_review).length})</button>
+      <button data-bulk-pair='${escapeHtml(p.pair_id)}' data-bulk-severity='low' data-bulk-decision='confirmed' title='Принять все low severity'>✓ low (${pairEvents.filter(e => (e.severity || 'low') === 'low' && !e.last_review).length})</button>
+      <button data-bulk-pair='${escapeHtml(p.pair_id)}' data-bulk-status='added' data-bulk-decision='rejected' class='danger' title='Отклонить все added'>✗ added (${pairEvents.filter(e => e.status === 'added' && !e.last_review).length})</button>
+    </div>` : ''}
+    <div class='thumbs' data-pair-id='${escapeHtml(p.pair_id)}'>
+      <div class='thumb' data-side='lhs' data-doc='${escapeHtml(p.lhs_doc_id || '')}'><span class='side-lbl lhs'>LHS</span><span class='thumb-empty'>…</span></div>
+      <div class='thumb' data-side='rhs' data-doc='${escapeHtml(p.rhs_doc_id || '')}'><span class='side-lbl rhs'>RHS</span><span class='thumb-empty'>…</span></div>
+    </div>
+    <button data-viewer-pair='${escapeHtml(p.pair_id)}' style='margin-top:12px;width:100%;padding:10px 16px;background:linear-gradient(135deg, #4cc3ff, #2b95cc);color:#04111a;border:0;border-radius:6px;font-weight:600;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px'>
+      📖 Открыть документы с подсветкой правок
+    </button>
+    <div class='links' style='margin-top:8px'>
+      ${pairArts.map(a => `<a class='pill-link' href='${BASE}/batches/${currentBatchId}/download/${escapeHtml(a.path)}' target='_blank'>${escapeHtml(a.type || 'download')} ↓</a>`).join('')}
+      <button class='pill-link' data-pair='${escapeHtml(p.pair_id)}'>view events →</button>
+      ${reviewedCount > 0 ? `<a class='pill-link' href='${BASE}/batches/${currentBatchId}/pair/${escapeHtml(p.pair_id)}/merged.docx' target='_blank' title='Скачать итоговый DOCX с применёнными accept/reject решениями'>📥 merged</a>` : ''}
+    </div>
+  `;
+  card.querySelector('button[data-pair]').addEventListener('click', () => {
+    document.getElementById('evt-pair').value = p.pair_id;
+    document.querySelector('.tab-line[data-detail-tab="events"]').click();
+    applyEventsFilter();
+  });
+  const viewerBtn = card.querySelector('button[data-viewer-pair]');
+  if (viewerBtn) viewerBtn.addEventListener('click', () => openInlineViewer(p.pair_id));
+  card.querySelectorAll('button[data-bulk-pair]').forEach(bb => {
+    bb.addEventListener('click', () => bulkReview(
+      bb.dataset.bulkPair, bb.dataset.bulkStatus || null, bb.dataset.bulkSeverity || null, bb.dataset.bulkDecision
+    ));
+  });
+  list.appendChild(card);
+}
+
+function _wirePairThumbnails() {
   // Lazy-render thumbnails using IntersectionObserver — avoid rendering
   // every pair's PDF upfront which is expensive for 60+ pair stress batches.
   const thumbObserver = new IntersectionObserver(async (entries) => {
@@ -2060,6 +2208,18 @@ function renderViewerSidebar(filterQ) {
                     '<div class="ev-id">' + escapeHtml((e.event_id || '').slice(-12)) + ' ' + lrChip +
                     ' <button class="bookmark-btn ' + (bookmarks.includes(e.event_id) ? 'is-marked' : '') + '" data-bm="' + escapeHtml(e.event_id) + '">★</button>' +
                     '</div>';
+    const lq = (e.lhs && e.lhs.quote) || '';
+    const rq = (e.rhs && e.rhs.quote) || '';
+    if (lq || rq || e.explanation_short) {
+      const hp = document.createElement('div');
+      hp.className = 'hover-preview';
+      let hpHtml = '';
+      if (lq) hpHtml += '<div class="label">LHS</div><div class="q lhs">' + escapeHtml(lq.slice(0, 200)) + '</div>';
+      if (rq) hpHtml += '<div class="label">RHS</div><div class="q rhs">' + escapeHtml(rq.slice(0, 200)) + '</div>';
+      if (e.explanation_short) hpHtml += '<div style="color:var(--mute);font-style:italic;margin-top:4px">' + escapeHtml(e.explanation_short) + '</div>';
+      hp.innerHTML = hpHtml;
+      row.appendChild(hp);
+    }
     row.addEventListener('click', () => jumpToEvent(e.event_id));
     const rbtn = row.querySelector('button.review-btn');
     if (rbtn) {
@@ -2243,7 +2403,12 @@ document.addEventListener('keydown', e => {
     }
   }
   if (inInput) return;
-  if (e.key === '?') { e.preventDefault(); helpModal.hidden = false; }
+  // `?` is Shift+7 on US layout, Shift+/ on EN, awkward on RU.
+  // Also accept lowercase `h` (when not in input) as universal help shortcut.
+  if (e.key === '?' || (e.key === 'h' && !e.ctrlKey && !e.metaKey && !e.altKey)) {
+    e.preventDefault();
+    helpModal.hidden = false;
+  }
 });
 
 function _viewerJumpRelative(delta) {
@@ -2459,6 +2624,69 @@ window.addEventListener('drop', async e => {
     toast('Ошибка добавления: ' + err.message, 'error');
   }
 });
+
+// -------- pairs filter/sort listeners --------
+document.getElementById('pairs-filter').addEventListener('input', _renderPairsFiltered);
+document.getElementById('pairs-sort').addEventListener('change', e => {
+  e.target.dataset.userTouched = '1';
+  _renderPairsFiltered();
+});
+
+// -------- settings modal --------
+const SETTINGS_DEFAULT_SORT_KEY = 'docdiff:default_sort';
+
+function _initSettingsModal() {
+  const modal = document.getElementById('settings-modal');
+  const inp = document.getElementById('settings-reviewer');
+  const sel = document.getElementById('settings-default-sort');
+  const clearBtn = document.getElementById('settings-clear');
+  const saveBtn = document.getElementById('settings-save');
+  if (!modal || !inp || !sel) return;
+
+  // Pre-fill from localStorage when modal opens
+  const updateFields = () => {
+    inp.value = localStorage.getItem('docdiff:reviewer') || '';
+    sel.value = localStorage.getItem(SETTINGS_DEFAULT_SORT_KEY) || 'updated';
+  };
+
+  // Hook open events — populate fields
+  const observer = new MutationObserver(() => {
+    if (!modal.hidden) updateFields();
+  });
+  observer.observe(modal, {attributes: true, attributeFilter: ['hidden']});
+
+  saveBtn.addEventListener('click', () => {
+    const name = (inp.value || '').trim();
+    if (name) localStorage.setItem('docdiff:reviewer', name);
+    localStorage.setItem(SETTINGS_DEFAULT_SORT_KEY, sel.value);
+    toast('Настройки сохранены', 'success');
+    modal.hidden = true;
+    // Re-render pairs with new sort if currently on detail view
+    const sortSel = document.getElementById('pairs-sort');
+    if (sortSel) {
+      sortSel.value = sel.value;
+      if (typeof _renderPairsFiltered === 'function') _renderPairsFiltered();
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    if (!confirm('Очистить все локальные настройки и bookmarks?')) return;
+    const keys = Object.keys(localStorage).filter(k => k.startsWith('docdiff:'));
+    keys.forEach(k => localStorage.removeItem(k));
+    toast(`Очищено ${keys.length} ключей`, 'success');
+    updateFields();
+  });
+
+  // Esc closes settings modal (highest priority, before help)
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && !modal.hidden) {
+      modal.hidden = true;
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  });
+}
+_initSettingsModal();
 
 // -------- init --------
 function initFromHash() {
