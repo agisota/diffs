@@ -544,6 +544,18 @@ def review_event(event_id: str, req: ReviewRequest):
     repo = _get_repo()
     if repo is None:
         raise HTTPException(status_code=503, detail="DB unavailable")
+    # Verify event exists before attempting the write — otherwise we get
+    # an opaque psycopg2 ForeignKeyViolation leaking into the HTTP body.
+    try:
+        from .db import get_session
+        from .db.models import DiffEvent
+        with get_session() as session:
+            if session.get(DiffEvent, event_id) is None:
+                raise HTTPException(status_code=404, detail="event not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning("review existence check failed: %s", e)
     decision_id = "rd_" + stable_id(
         event_id, req.reviewer_name, req.decision, str(now_ts_int()), n=20
     )
@@ -557,7 +569,8 @@ def review_event(event_id: str, req: ReviewRequest):
         )
     except Exception as e:
         logger.warning("review write failed: %s", e)
-        raise HTTPException(status_code=400, detail=f"review failed: {e}")
+        # Don't leak raw SQL error text to the client.
+        raise HTTPException(status_code=500, detail="review write failed")
     # Audit (best-effort). Resolve event → pair_run → batch so the entry
     # surfaces in the per-batch audit view.
     audit_batch_id = None
@@ -594,6 +607,18 @@ def list_event_reviews(event_id: str):
     repo = _get_repo()
     if repo is None:
         raise HTTPException(status_code=503, detail="DB unavailable")
+    # Verify event exists so non-existent IDs don't silently return an
+    # empty history list (caught by triple-check audit).
+    try:
+        from .db import get_session
+        from .db.models import DiffEvent
+        with get_session() as session:
+            if session.get(DiffEvent, event_id) is None:
+                raise HTTPException(status_code=404, detail="event not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning("reviews existence check failed: %s", e)
     return {"event_id": event_id, "history": repo.list_event_reviews(event_id)}
 
 
@@ -722,6 +747,11 @@ def rerender_reports(batch_id: str, anchor_doc_id: str | None = Query(None)):
 
 @app.get("/batches/{batch_id}/audit")
 def get_batch_audit(batch_id: str, limit: int = Query(200, ge=1, le=2000)):
+    # Existence check so non-existent batch_id doesn't silently return [].
+    try:
+        load_state(batch_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="batch not found")
     from .state import _get_repo
     repo = _get_repo()
     if repo is None:
