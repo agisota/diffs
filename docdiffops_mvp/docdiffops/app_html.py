@@ -920,7 +920,13 @@ document.getElementById('btn-create').addEventListener('click', async () => {
     progFill.style.width = '80%';
     let pollDelay = 2000;  // start at 2s, back off to 15s
     let result = null;
+    // Hard cap: stop polling after 90 min. Sanity check — beyond this
+    // the worker is gone, network is dead, or task is genuinely stuck.
+    const pollStart = Date.now();
     while (true) {
+      if (Date.now() - pollStart > 90 * 60 * 1000) {
+        throw new Error('polling timed out (>90 min) — worker may be dead, check docker logs');
+      }
       await new Promise(r => setTimeout(r, pollDelay));
       const t = await fetch(BASE + '/tasks/' + taskId).then(r => r.json());
       if (t.state === 'SUCCESS') {
@@ -1084,9 +1090,39 @@ async function openBatch(batchId) {
 
 document.getElementById('btn-refresh-detail').addEventListener('click', () => currentBatchId && openBatch(currentBatchId));
 
+function _inlinePrompt(title, initial, placeholder) {
+  // Generic styled prompt — Esc cancels (returns null), Enter saves.
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:120;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)';
+    overlay.innerHTML = `
+      <div style="background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:20px 24px;min-width:380px;box-shadow:var(--shadow)">
+        <div style="font-size:14px;font-weight:600;margin-bottom:12px">${escapeHtml(title)}</div>
+        <input id="ip-input" autofocus style="width:100%;background:var(--panel-2);border:1px solid var(--line);color:var(--fg);padding:8px 10px;border-radius:4px;font-size:13px" placeholder="${escapeHtml(placeholder||'')}">
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
+          <button id="ip-cancel" style="background:transparent;border:1px solid var(--line);color:var(--mute);padding:6px 12px;border-radius:4px;font-size:12px;cursor:pointer">Отмена</button>
+          <button id="ip-ok" style="background:linear-gradient(135deg,#4cc3ff,#2b95cc);border:0;color:#04111a;padding:6px 16px;border-radius:4px;font-size:12px;font-weight:600;cursor:pointer">OK</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    const inp = overlay.querySelector('#ip-input');
+    inp.value = initial || '';
+    setTimeout(() => { inp.focus(); inp.select(); }, 50);
+    const close = (val) => { overlay.remove(); resolve(val); };
+    overlay.querySelector('#ip-ok').addEventListener('click', () => close(inp.value));
+    overlay.querySelector('#ip-cancel').addEventListener('click', () => close(null));
+    inp.addEventListener('keydown', e => {
+      if (e.key === 'Enter') close(inp.value);
+      if (e.key === 'Escape') close(null);
+    });
+    overlay.addEventListener('click', e => { if (e.target === overlay) close(null); });
+  });
+}
+
 async function _renameBatchInline(state) {
   const cur = state.title || '';
-  const v = window.prompt('Новое название batch:', cur);
+  const v = await _inlinePrompt('Переименовать batch', cur, 'Новое название…');
   if (v === null) return;
   try {
     await fetch(BASE + '/batches/' + currentBatchId, {
@@ -1560,10 +1596,14 @@ async function _runAsyncRerender(endpoint, label) {
     }
     let pollDelay = 1500;
     let elapsed = 0;
+    const POLL_TIMEOUT_SEC = 90 * 60;  // 90 min cap — beyond this assume worker dead
     while (true) {
       await new Promise(r => setTimeout(r, pollDelay));
       elapsed += pollDelay / 1000;
       btn.textContent = '⏳ ' + Math.round(elapsed) + 's';
+      if (elapsed > POLL_TIMEOUT_SEC) {
+        throw new Error(`polling timed out (>${POLL_TIMEOUT_SEC/60} min) — task ${taskId} may be stuck`);
+      }
       const t = await fetch(BASE + '/tasks/' + taskId).then(r => r.json());
       if (t.state === 'SUCCESS') {
         const m = t.result || {};
