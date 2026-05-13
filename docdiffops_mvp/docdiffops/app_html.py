@@ -58,6 +58,12 @@ header.topbar {
 .tab { background: transparent; border: 1px solid transparent; color: var(--mute); padding: 6px 12px; border-radius: 6px; font-size: 13px; }
 .tab.active { color: var(--strong); background: var(--panel-2); border-color: var(--blue-dim); box-shadow: inset 0 0 0 1px var(--blue-dim); }
 .tab:hover:not(.active) { color: var(--fg); background: var(--panel-2); }
+.topbar-btn {
+  background: transparent; border: 0; padding: 0;
+  color: var(--mute); font: inherit; font-size: 12px;
+  cursor: pointer;
+}
+.topbar-btn:hover { color: var(--fg); text-decoration: underline; }
 .topbar .ext { display: flex; gap: 14px; color: var(--mute); font-size: 12px; align-items: center; flex-wrap: wrap; }
 .topbar .ext a { color: var(--mute); }
 @media (max-width: 700px) { .topbar .ext { font-size: 11px; gap: 8px; } }
@@ -486,8 +492,8 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
   <div class="ext">
     <span><span class="dot-online"></span> live</span>
     <span id="topbar-stats" class="topbar-stats" title="Всего batches/events"></span>
-    <a href="#" onclick="document.getElementById('settings-modal').hidden=false;return false" title="Настройки">⚙ Настройки</a>
-    <a href="#" onclick="document.getElementById('help-modal').hidden=false;return false" title="Горячие клавиши">⌨️ Горячие клавиши</a>
+    <button type="button" class="topbar-btn" id="topbar-settings-btn" title="Настройки">⚙ Настройки</button>
+    <button type="button" class="topbar-btn" id="topbar-help-btn" title="Горячие клавиши">⌨️ Горячие клавиши</button>
     <a href="/docs" target="_blank">API ↗</a>
     <a href="https://github.com/agisota/diffs" target="_blank">GitHub ↗</a>
   </div>
@@ -634,7 +640,7 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
   <div style="background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:24px 28px;max-width:520px;width:90%;box-shadow:var(--shadow)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
       <h3 style="margin:0;font-size:16px">⌨️ Горячие клавиши</h3>
-      <button style="background:transparent;border:0;color:var(--mute);font-size:18px;cursor:pointer" onclick="document.getElementById('help-modal').hidden=true">✕</button>
+      <button aria-label="Закрыть подсказку" style="background:transparent;border:0;color:var(--mute);font-size:18px;cursor:pointer" onclick="document.getElementById('help-modal').hidden=true">✕</button>
     </div>
     <table style="width:100%;font-size:13px;border-collapse:collapse">
       <tr><td colspan="2" style="padding:6px 0 4px;color:var(--mute);font-size:11px;text-transform:uppercase;letter-spacing:0.06em">В inline viewer</td></tr>
@@ -656,7 +662,7 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
   <div class="help-card">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
       <h3 style="margin:0;font-size:16px">⚙ Настройки</h3>
-      <button style="background:transparent;border:0;color:var(--mute);font-size:18px;cursor:pointer" onclick="document.getElementById('settings-modal').hidden=true">✕</button>
+      <button aria-label="Закрыть настройки" style="background:transparent;border:0;color:var(--mute);font-size:18px;cursor:pointer" onclick="document.getElementById('settings-modal').hidden=true">✕</button>
     </div>
     <div class="settings-row">
       <label>Имя reviewer'а</label>
@@ -1072,7 +1078,7 @@ function _filterAndRenderBatches() {
     card.innerHTML = `
       <div style='display:flex;justify-content:space-between;align-items:start;gap:8px'>
         <div class='id'>${escapeHtml(b.batch_id || '')}</div>
-        <button class='batch-del' data-bid='${escapeHtml(b.batch_id)}' title='Удалить batch' style='background:transparent;border:0;color:var(--mute);cursor:pointer;font-size:13px;padding:0 4px'>🗑</button>
+        <button class='batch-del' data-bid='${escapeHtml(b.batch_id)}' aria-label='Удалить batch' title='Удалить batch' style='background:transparent;border:0;color:var(--mute);cursor:pointer;font-size:13px;padding:0 4px'>🗑</button>
       </div>
       <div class='title'>${escapeHtml(b.title || '(untitled)')}</div>
       <div class='row'><span>Документы</span><span class='v'>${b.documents_count ?? '—'}</span></div>
@@ -2368,9 +2374,12 @@ window.openInlineViewer = async function(pairId) {
 document.addEventListener('keydown', e => {
   const modal = document.getElementById('viewer-modal');
   if (modal.hidden) return;
-  // Don't intercept when typing in filter input or popover textarea
-  const tag = (e.target && e.target.tagName || '').toUpperCase();
-  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  // Don't intercept when typing in filter input, popover textarea, an
+  // open <select> (j/k would otherwise hijack dropdown nav), or any
+  // contenteditable surface (defends future rich-text inputs).
+  const t = e.target;
+  const tag = (t && t.tagName || '').toUpperCase();
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (t && t.isContentEditable)) return;
   if (e.key === 'Escape') { closeInlineViewer(); return; }
   if (e.key === 'j' || e.key === 'J') { e.preventDefault(); _viewerJumpRelative(1); return; }
   if (e.key === 'k' || e.key === 'K') { e.preventDefault(); _viewerJumpRelative(-1); return; }
@@ -2381,8 +2390,9 @@ document.addEventListener('keydown', e => {
   if (e.key === '0') { e.preventDefault(); _viewerFitToWidth(); return; }
 });
 document.addEventListener('keydown', e => {
-  const tag = (e.target && e.target.tagName || '').toUpperCase();
-  const inInput = tag === 'INPUT' || tag === 'TEXTAREA';
+  const t = e.target;
+  const tag = (t && t.tagName || '').toUpperCase();
+  const inInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (t && t.isContentEditable);
   const helpModal = document.getElementById('help-modal');
   // Escape closes (in priority order) help modal → stuck toasts → viewer.
   if (e.key === 'Escape' && helpModal && !helpModal.hidden) {
@@ -2687,6 +2697,14 @@ function _initSettingsModal() {
   });
 }
 _initSettingsModal();
+
+// Topbar openers (replaced <a href="#" onclick=…> with <button> for a11y).
+document.getElementById('topbar-settings-btn').addEventListener('click', () => {
+  document.getElementById('settings-modal').hidden = false;
+});
+document.getElementById('topbar-help-btn').addEventListener('click', () => {
+  document.getElementById('help-modal').hidden = false;
+});
 
 // -------- init --------
 function initFromHash() {
