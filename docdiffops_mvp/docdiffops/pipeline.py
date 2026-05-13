@@ -745,7 +745,7 @@ def _build_repo() -> Any | None:
         return None
 
 
-def rerender_compare(batch_id: str) -> dict[str, Any]:
+def rerender_compare(batch_id: str, task: Any = None) -> dict[str, Any]:
     """Re-run the compare stage on an existing batch without re-uploading or
     re-normalizing. Loads cached extract blocks from disk, regenerates events
     via compare_pair + LLM (if enabled) + enrich, and upserts events into the
@@ -753,6 +753,13 @@ def rerender_compare(batch_id: str) -> dict[str, Any]:
 
     Returns metrics dict mirroring run_batch.
     """
+    def _progress(stage: str, pct: int, message: str = "") -> None:
+        if task is not None:
+            try:
+                task.update_state(state="PROGRESS", meta={"stage": stage, "pct": pct, "message": message})
+            except Exception:
+                pass
+
     state = load_state(batch_id)
     base = batch_dir(batch_id)
     repo = _build_repo()
@@ -765,6 +772,7 @@ def rerender_compare(batch_id: str) -> dict[str, Any]:
     all_events: list[dict[str, Any]] = []
     pair_summaries: list[dict[str, Any]] = []
 
+    _progress("recompare", 0, f"Пересчёт {len(pairs)} пар…")
     for pair in pairs:
         lhs_doc = docs_map.get(pair["lhs_doc_id"])
         rhs_doc = docs_map.get(pair["rhs_doc_id"])
@@ -846,10 +854,11 @@ def rerender_compare(batch_id: str) -> dict[str, Any]:
         "rerender": True,
     }
     save_state(batch_id, state)
+    _progress("done", 100, "Готово")
     return state["metrics"]
 
 
-def rerender_full(batch_id: str) -> dict[str, Any]:
+def rerender_full(batch_id: str, task: Any = None) -> dict[str, Any]:
     """Force-rerun the entire pipeline on existing uploads: delete cached
     extracts (so canonical_pdf-based extract regenerates with bbox), then
     invoke run_batch. Preserves uploads themselves and review_decisions
@@ -859,6 +868,14 @@ def rerender_full(batch_id: str) -> dict[str, Any]:
     documents that never had canonical_pdf (e.g. HTML uploaded before the
     TEXT_EXTS normalize fix) now get one and contribute bbox to events.
     """
+    def _progress(stage: str, pct: int, message: str = "") -> None:
+        if task is not None:
+            try:
+                task.update_state(state="PROGRESS", meta={"stage": stage, "pct": pct, "message": message})
+            except Exception:
+                pass
+
+    _progress("reset", 5, "Очистка кэша экстрактов…")
     state = load_state(batch_id)
     base = batch_dir(batch_id)
     # Force re-extract by removing cached extract JSONs on disk and any
@@ -901,10 +918,17 @@ def rerender_full(batch_id: str) -> dict[str, Any]:
     save_state(batch_id, state)
     # Now the regular pipeline picks up: re-normalize + re-extract +
     # full compare + LLM + enrich + write artifacts.
-    return run_batch(batch_id)
+    return run_batch(batch_id, task=task)
 
 
-def run_batch(batch_id: str, profile: str = "fast") -> dict[str, Any]:
+def run_batch(batch_id: str, profile: str = "fast", task: Any = None) -> dict[str, Any]:
+    def _progress(stage: str, pct: int, message: str = "") -> None:
+        if task is not None:
+            try:
+                task.update_state(state="PROGRESS", meta={"stage": stage, "pct": pct, "message": message})
+            except Exception:
+                pass
+
     state = load_state(batch_id)
     repo = _build_repo()
     # Ensure the batch row exists in DB even when create_batch ran before
@@ -918,9 +942,13 @@ def run_batch(batch_id: str, profile: str = "fast") -> dict[str, Any]:
     save_state(batch_id, state)
 
     try:
+        _progress("normalize", 0, "Нормализация и экстракция документов…")
         normalize_and_extract(batch_id, state, prefer_pdf_visual=True, repo=repo)
+        _progress("compare", 20, "Сравнение пар документов…")
         all_events, pair_summaries = run_all_pairs(batch_id, state, profile=profile, repo=repo)
+        _progress("render", 70, "Генерация артефактов…")
         render_global_reports(batch_id, state, all_events, pair_summaries, repo=repo)
+        _progress("forensic", 90, "Сборка forensic-бандла…")
         state["metrics"] = {
             "time_to_report_sec": round(time.time() - start, 2),
             "documents": len(state.get("documents", [])),
@@ -930,6 +958,7 @@ def run_batch(batch_id: str, profile: str = "fast") -> dict[str, Any]:
         }
         state["runs"][-1].update({"status": "done", "finished_at": now_ts(), "duration_sec": round(time.time() - start, 2)})
         save_state(batch_id, state)
+        _progress("done", 100, "Готово")
         return state["metrics"]
     except Exception as e:
         state["runs"][-1].update({"status": "error", "finished_at": now_ts(), "error": str(e)})

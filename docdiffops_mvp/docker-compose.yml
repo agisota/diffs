@@ -43,7 +43,7 @@ services:
 
   worker:
     build: .
-    command: celery -A docdiffops.worker.celery_app worker --loglevel=INFO --concurrency=2
+    command: celery -A docdiffops.worker.celery_app worker --loglevel=INFO --concurrency=4 -Q high,low
     environment:
       DATA_DIR: /data
       REDIS_URL: redis://redis:6379/0

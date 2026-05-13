@@ -912,7 +912,11 @@ document.getElementById('btn-create').addEventListener('click', async () => {
     // Async path: large corpora take 30+ minutes — sync=true would time out
     // at the reverse proxy. Kick off via Celery worker and poll /tasks/{id}.
     progLabel.textContent = 'Запуск pipeline…'; progFill.style.width = '75%';
-    const kicked = await fetch(BASE + '/batches/' + batchId + '/run?profile=fast', { method: 'POST' }).then(r => r.json());
+    const r0 = await fetch(BASE + '/batches/' + batchId + '/run?profile=fast', { method: 'POST' });
+    if (r0.status === 409) {
+      throw new Error('Уже идёт прогон для этого batch — подожди завершения');
+    }
+    const kicked = await r0.json();
     const taskId = kicked.task_id;
     if (!taskId) throw new Error('worker did not accept task: ' + JSON.stringify(kicked));
 
@@ -929,6 +933,24 @@ document.getElementById('btn-create').addEventListener('click', async () => {
       }
       await new Promise(r => setTimeout(r, pollDelay));
       const t = await fetch(BASE + '/tasks/' + taskId).then(r => r.json());
+      if (t.state === 'PROGRESS' && t.progress) {
+        const stage = t.progress.stage || '...';
+        const pct = t.progress.pct ?? 0;
+        const msg = t.progress.message || '';
+        const stageLabels = {
+          normalize: '🔄 Нормализация',
+          compare: '🔍 Сравнение',
+          render: '📄 Рендеринг',
+          forensic: '🧬 Forensic',
+          recompare: '🔁 Перепроверка',
+          reset: '🧹 Очистка',
+          done: '✓ Готово',
+        };
+        const label = stageLabels[stage] || stage;
+        progLabel.textContent = label + ' (' + pct + '%) — ' + msg;
+        // 80% reserved for pipeline runs; map sub-progress into 80-99 range.
+        progFill.style.width = (80 + Math.floor(pct * 0.19)) + '%';
+      }
       if (t.state === 'SUCCESS') {
         result = t.result || {};
         _maybeNotify('DocDiffOps: pipeline готов', `Batch ${batchId.slice(-8)}: ${(result.events ?? 0)} событий`);
@@ -1585,7 +1607,13 @@ async function _runAsyncRerender(endpoint, label) {
   const orig = btn.textContent;
   btn.disabled = true; btn.textContent = '⏳ запуск…';
   try {
-    const kicked = await fetch(BASE + '/batches/' + currentBatchId + '/' + endpoint, { method: 'POST' }).then(r => r.json());
+    const r = await fetch(BASE + '/batches/' + currentBatchId + '/' + endpoint, { method: 'POST' });
+    if (r.status === 409) {
+      const e = await r.json().catch(() => ({}));
+      toast('Уже идёт обработка: ' + (e.detail || 'параллельный run заблокирован'), 'error');
+      return;
+    }
+    const kicked = await r.json();
     const taskId = kicked.task_id;
     if (!taskId) {
       // sync mode fallback — already finished
@@ -1600,11 +1628,17 @@ async function _runAsyncRerender(endpoint, label) {
     while (true) {
       await new Promise(r => setTimeout(r, pollDelay));
       elapsed += pollDelay / 1000;
-      btn.textContent = '⏳ ' + Math.round(elapsed) + 's';
       if (elapsed > POLL_TIMEOUT_SEC) {
         throw new Error(`polling timed out (>${POLL_TIMEOUT_SEC/60} min) — task ${taskId} may be stuck`);
       }
       const t = await fetch(BASE + '/tasks/' + taskId).then(r => r.json());
+      if (t.state === 'PROGRESS' && t.progress) {
+        const stage = t.progress.stage || '...';
+        const pct = t.progress.pct ?? 0;
+        btn.textContent = `⏳ ${stage} ${pct}% (${Math.round(elapsed)}s)`;
+      } else {
+        btn.textContent = '⏳ ' + Math.round(elapsed) + 's';
+      }
       if (t.state === 'SUCCESS') {
         const m = t.result || {};
         const msg = `${label} готов: ${m.pairs ?? 0} пар, ${m.events ?? 0} событий за ${m.time_to_report_sec ?? '?'}s`;

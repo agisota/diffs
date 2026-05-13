@@ -31,6 +31,14 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="DocDiffOps", version="0.1.0")
 
+# Middleware registration order (LIFO in Starlette): BasicAuth is added first
+# so RateLimitMiddleware ends up outermost (runs first on every request).
+from .auth import BasicAuthMiddleware  # noqa: E402
+from .rate_limit import RateLimitMiddleware  # noqa: E402
+
+app.add_middleware(BasicAuthMiddleware)
+app.add_middleware(RateLimitMiddleware)
+
 # Static assets (pdf.js bundled in Dockerfile). Tolerate missing dir on dev
 # boxes that don't run the Docker build — viewer falls back gracefully.
 _STATIC_DIR = Path(__file__).parent / "static"
@@ -289,6 +297,13 @@ def run_batch_endpoint(batch_id: str, profile: str = Query("fast", pattern="^(fa
         metrics = run_batch_sync(batch_id, profile=profile)
         return {"mode": "sync", "batch_id": batch_id, "metrics": metrics}
 
+    from .batch_lock import try_acquire, current_holder
+    if not try_acquire(batch_id, task_id="run"):
+        held_by = current_holder(batch_id)
+        raise HTTPException(
+            status_code=409,
+            detail=f"another long-running task is in progress for this batch (holder={held_by})",
+        )
     task = run_batch_task.delay(batch_id, profile)
     return {"mode": "async", "batch_id": batch_id, "task_id": task.id}
 
@@ -317,6 +332,13 @@ def rerender_compare_endpoint(batch_id: str, sync: bool = Query(False)):
             logger.exception("rerender_compare failed for %s", batch_id)
             raise HTTPException(status_code=500, detail=f"rerender failed: {e}")
         return {"batch_id": batch_id, "mode": "rerender-compare-sync", "metrics": metrics}
+    from .batch_lock import try_acquire, current_holder
+    if not try_acquire(batch_id, task_id="rerender-compare"):
+        held_by = current_holder(batch_id)
+        raise HTTPException(
+            status_code=409,
+            detail=f"another long-running task is in progress for this batch (holder={held_by})",
+        )
     from .worker import rerender_compare_task
     task = rerender_compare_task.delay(batch_id)
     return {"batch_id": batch_id, "mode": "rerender-compare-async", "task_id": task.id}
@@ -346,6 +368,13 @@ def rerender_full_endpoint(batch_id: str, sync: bool = Query(False)):
             logger.exception("rerender_full failed for %s", batch_id)
             raise HTTPException(status_code=500, detail=f"rerender-full failed: {e}")
         return {"batch_id": batch_id, "mode": "rerender-full-sync", "metrics": metrics}
+    from .batch_lock import try_acquire, current_holder
+    if not try_acquire(batch_id, task_id="rerender-full"):
+        held_by = current_holder(batch_id)
+        raise HTTPException(
+            status_code=409,
+            detail=f"another long-running task is in progress for this batch (holder={held_by})",
+        )
     from .worker import rerender_full_task
     task = rerender_full_task.delay(batch_id)
     return {"batch_id": batch_id, "mode": "rerender-full-async", "task_id": task.id}
@@ -499,7 +528,12 @@ def get_merged_zip(batch_id: str):
 @app.get("/tasks/{task_id}")
 def get_task(task_id: str):
     res = run_batch_task.AsyncResult(task_id)
-    return {"task_id": task_id, "state": res.state, "result": res.result if res.ready() else None}
+    payload: dict = {"task_id": task_id, "state": res.state}
+    if res.ready():
+        payload["result"] = res.result
+    elif res.state == "PROGRESS":
+        payload["progress"] = res.info if isinstance(res.info, dict) else {}
+    return payload
 
 
 @app.get("/batches/{batch_id}/artifacts")
