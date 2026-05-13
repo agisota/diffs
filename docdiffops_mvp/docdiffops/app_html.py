@@ -30,6 +30,16 @@ APP_HTML = r"""<!doctype html>
   --rad: 6px; --rad-lg: 10px;
   --shadow: 0 6px 28px rgba(0,0,0,0.45);
 }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+  .dropzone.dragging { transform: none; }
+  .batch-card:hover, .pair-card:hover { transform: none; }
+}
 * { box-sizing: border-box; }
 html, body { height: 100%; }
 body {
@@ -40,6 +50,15 @@ body {
 a { color: var(--blue); text-decoration: none; }
 a:hover { text-decoration: underline; }
 button { font: inherit; cursor: pointer; }
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
 input, select, textarea { font: inherit; color: inherit; }
 code, pre, .mono { font-family: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, monospace; font-size: 12.5px; }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
@@ -636,11 +655,11 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
 
 </main>
 
-<div id="help-modal" hidden onclick="if(event.target===this)this.hidden=true">
+<div id="help-modal" role="dialog" aria-modal="true" aria-labelledby="help-modal-title" hidden onclick="if(event.target===this)_closeModal(this)">
   <div style="background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:24px 28px;max-width:520px;width:90%;box-shadow:var(--shadow)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-      <h3 style="margin:0;font-size:16px">⌨️ Горячие клавиши</h3>
-      <button aria-label="Закрыть подсказку" style="background:transparent;border:0;color:var(--mute);font-size:18px;cursor:pointer" onclick="document.getElementById('help-modal').hidden=true">✕</button>
+      <h3 id="help-modal-title" style="margin:0;font-size:16px">⌨️ Горячие клавиши</h3>
+      <button aria-label="Закрыть подсказку" style="background:transparent;border:0;color:var(--mute);font-size:18px;cursor:pointer" onclick="_closeModal(document.getElementById('help-modal'))">✕</button>
     </div>
     <table style="width:100%;font-size:13px;border-collapse:collapse">
       <tr><td colspan="2" style="padding:6px 0 4px;color:var(--mute);font-size:11px;text-transform:uppercase;letter-spacing:0.06em">В inline viewer</td></tr>
@@ -658,11 +677,11 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
   </div>
 </div>
 
-<div id="settings-modal" hidden onclick="if(event.target===this)this.hidden=true">
+<div id="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title" hidden onclick="if(event.target===this)_closeModal(this)">
   <div class="help-card">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-      <h3 style="margin:0;font-size:16px">⚙ Настройки</h3>
-      <button aria-label="Закрыть настройки" style="background:transparent;border:0;color:var(--mute);font-size:18px;cursor:pointer" onclick="document.getElementById('settings-modal').hidden=true">✕</button>
+      <h3 id="settings-modal-title" style="margin:0;font-size:16px">⚙ Настройки</h3>
+      <button aria-label="Закрыть настройки" style="background:transparent;border:0;color:var(--mute);font-size:18px;cursor:pointer" onclick="_closeModal(document.getElementById('settings-modal'))">✕</button>
     </div>
     <div class="settings-row">
       <label>Имя reviewer'а</label>
@@ -682,15 +701,15 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
       <button id="settings-clear" style="background:rgba(229,72,77,0.12);border:1px solid var(--red);color:var(--red);padding:6px 12px;border-radius:4px;font-size:12px;cursor:pointer">🗑 Очистить bookmarks, reviewer name, preferences</button>
     </div>
     <div style="margin-top:14px;display:flex;justify-content:flex-end;gap:8px">
-      <button onclick="document.getElementById('settings-modal').hidden=true" style="background:transparent;border:1px solid var(--line);color:var(--mute);padding:6px 14px;border-radius:4px;font-size:12px;cursor:pointer">Отмена</button>
+      <button onclick="_closeModal(document.getElementById('settings-modal'))" style="background:transparent;border:1px solid var(--line);color:var(--mute);padding:6px 14px;border-radius:4px;font-size:12px;cursor:pointer">Отмена</button>
       <button id="settings-save" style="background:linear-gradient(135deg,#4cc3ff,#2b95cc);border:0;color:#04111a;padding:6px 18px;border-radius:4px;font-size:12px;font-weight:600;cursor:pointer">Сохранить</button>
     </div>
   </div>
 </div>
 
-<div id="viewer-modal" class="viewer-modal" hidden>
+<div id="viewer-modal" class="viewer-modal" role="dialog" aria-modal="true" aria-labelledby="viewer-modal-title" hidden>
   <div class="vm-head">
-    <h3>📖 Inline viewer</h3>
+    <h3 id="viewer-modal-title">📖 Inline viewer</h3>
     <span class="pair-id" id="vm-pair-id"></span>
     <div class="spacer"></div>
     <div class="vm-mode">
@@ -756,7 +775,7 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
   <div id="ev-popover" class="ev-popover" hidden></div>
 </div>
 
-<div class="toast-wrap" id="toast-wrap"></div>
+<div class="toast-wrap" id="toast-wrap" aria-live="polite" aria-atomic="false"></div>
 
 <script>
 const BASE = '';
@@ -794,9 +813,12 @@ function _getReviewerName() {
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:120;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-labelledby', 'rn-title');
     overlay.innerHTML = `
       <div style="background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:20px 24px;min-width:340px;box-shadow:var(--shadow)">
-        <div style="font-size:14px;font-weight:600;margin-bottom:6px">Ваше имя для review</div>
+        <div id="rn-title" style="font-size:14px;font-weight:600;margin-bottom:6px">Ваше имя для review</div>
         <div style="color:var(--mute);font-size:12px;margin-bottom:12px">Сохранится в браузере, спрошу один раз.</div>
         <input id="rn-input" autofocus placeholder="например, Иванов" style="width:100%;background:var(--panel-2);border:1px solid var(--line);color:var(--fg);padding:8px 10px;border-radius:4px;font-size:13px">
         <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
@@ -807,10 +829,12 @@ function _getReviewerName() {
     `;
     document.body.appendChild(overlay);
     const inp = overlay.querySelector('#rn-input');
+    _openModal(overlay, inp);
     setTimeout(() => inp.focus(), 50);
     const done = (name) => {
       const finalName = (name || '').trim() || 'anonymous';
       localStorage.setItem('docdiff:reviewer', finalName);
+      _closeModal(overlay);
       overlay.remove();
       resolve(finalName);
     };
@@ -1201,9 +1225,12 @@ function _inlinePrompt(title, initial, placeholder) {
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:120;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-labelledby', 'ip-title');
     overlay.innerHTML = `
       <div style="background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:20px 24px;min-width:380px;box-shadow:var(--shadow)">
-        <div style="font-size:14px;font-weight:600;margin-bottom:12px">${escapeHtml(title)}</div>
+        <div id="ip-title" style="font-size:14px;font-weight:600;margin-bottom:12px">${escapeHtml(title)}</div>
         <input id="ip-input" autofocus style="width:100%;background:var(--panel-2);border:1px solid var(--line);color:var(--fg);padding:8px 10px;border-radius:4px;font-size:13px" placeholder="${escapeHtml(placeholder||'')}">
         <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
           <button id="ip-cancel" style="background:transparent;border:1px solid var(--line);color:var(--mute);padding:6px 12px;border-radius:4px;font-size:12px;cursor:pointer">Отмена</button>
@@ -1214,8 +1241,9 @@ function _inlinePrompt(title, initial, placeholder) {
     document.body.appendChild(overlay);
     const inp = overlay.querySelector('#ip-input');
     inp.value = initial || '';
+    _openModal(overlay, inp);
     setTimeout(() => { inp.focus(); inp.select(); }, 50);
-    const close = (val) => { overlay.remove(); resolve(val); };
+    const close = (val) => { _closeModal(overlay); overlay.remove(); resolve(val); };
     overlay.querySelector('#ip-ok').addEventListener('click', () => close(inp.value));
     overlay.querySelector('#ip-cancel').addEventListener('click', () => close(null));
     inp.addEventListener('keydown', e => {
@@ -1917,7 +1945,7 @@ async function _loadPdfForSide(side, pair, pairId) {
 async function openInlineViewer(pairId) {
   if (!window.pdfjsLib) { toast('pdf.js not loaded', 'error'); return; }
   const modal = document.getElementById('viewer-modal');
-  modal.hidden = false;
+  _openModal(modal);
   document.body.style.overflow = 'hidden';
   viewerState.pairId = pairId;
   localStorage.setItem('docdiff:lastPair', pairId);
@@ -2267,7 +2295,7 @@ async function jumpToEvent(evId) {
 }
 
 function closeInlineViewer() {
-  document.getElementById('viewer-modal').hidden = true;
+  _closeModal(document.getElementById('viewer-modal'));
   document.body.style.overflow = '';
   viewerState.lhsPdf = null; viewerState.rhsPdf = null;
   viewerState.events = []; viewerState.activeEventId = null;
@@ -2396,7 +2424,7 @@ document.addEventListener('keydown', e => {
   const helpModal = document.getElementById('help-modal');
   // Escape closes (in priority order) help modal → stuck toasts → viewer.
   if (e.key === 'Escape' && helpModal && !helpModal.hidden) {
-    helpModal.hidden = true;
+    _closeModal(helpModal);
     e.preventDefault();
     e.stopPropagation();
     return;
@@ -2417,7 +2445,7 @@ document.addEventListener('keydown', e => {
   // Also accept lowercase `h` (when not in input) as universal help shortcut.
   if (e.key === '?' || (e.key === 'h' && !e.ctrlKey && !e.metaKey && !e.altKey)) {
     e.preventDefault();
-    helpModal.hidden = false;
+    _openModal(helpModal);
   }
 });
 
@@ -2642,6 +2670,59 @@ document.getElementById('pairs-sort').addEventListener('change', e => {
   _renderPairsFiltered();
 });
 
+// -------- focus management --------
+function _trapFocus(modalEl) {
+  if (!modalEl) return () => {};
+  const handler = (e) => {
+    if (e.key !== 'Tab' || modalEl.hidden) return;
+    const focusable = modalEl.querySelectorAll(
+      'a[href]:not([disabled]), button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    );
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  };
+  modalEl.addEventListener('keydown', handler);
+  return () => modalEl.removeEventListener('keydown', handler);
+}
+
+// Map<modalEl, {teardown, lastFocus}> for active focus traps.
+const _activeTraps = new WeakMap();
+
+function _openModal(modalEl, focusTarget) {
+  if (!modalEl || _activeTraps.has(modalEl)) return;
+  const lastFocus = document.activeElement;
+  modalEl.hidden = false;
+  const teardown = _trapFocus(modalEl);
+  _activeTraps.set(modalEl, { teardown, lastFocus });
+  // Defer focus to next frame so the modal is laid out before focusing.
+  requestAnimationFrame(() => {
+    const target = focusTarget || modalEl.querySelector(
+      'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    );
+    target?.focus?.();
+  });
+}
+
+function _closeModal(modalEl) {
+  if (!modalEl) return;
+  const entry = _activeTraps.get(modalEl);
+  modalEl.hidden = true;
+  if (entry) {
+    entry.teardown();
+    _activeTraps.delete(modalEl);
+    // Restore focus to the opener so Esc doesn't dump the user back to body.
+    entry.lastFocus?.focus?.();
+  }
+}
+
 // -------- settings modal --------
 const SETTINGS_DEFAULT_SORT_KEY = 'docdiff:default_sort';
 
@@ -2670,7 +2751,7 @@ function _initSettingsModal() {
     if (name) localStorage.setItem('docdiff:reviewer', name);
     localStorage.setItem(SETTINGS_DEFAULT_SORT_KEY, sel.value);
     toast('Настройки сохранены', 'success');
-    modal.hidden = true;
+    _closeModal(modal);
     // Re-render pairs with new sort if currently on detail view
     const sortSel = document.getElementById('pairs-sort');
     if (sortSel) {
@@ -2690,7 +2771,7 @@ function _initSettingsModal() {
   // Esc closes settings modal (highest priority, before help)
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape' && !modal.hidden) {
-      modal.hidden = true;
+      _closeModal(modal);
       e.preventDefault();
       e.stopPropagation();
     }
@@ -2700,10 +2781,10 @@ _initSettingsModal();
 
 // Topbar openers (replaced <a href="#" onclick=…> with <button> for a11y).
 document.getElementById('topbar-settings-btn').addEventListener('click', () => {
-  document.getElementById('settings-modal').hidden = false;
+  _openModal(document.getElementById('settings-modal'));
 });
 document.getElementById('topbar-help-btn').addEventListener('click', () => {
-  document.getElementById('help-modal').hidden = false;
+  _openModal(document.getElementById('help-modal'));
 });
 
 // -------- init --------
