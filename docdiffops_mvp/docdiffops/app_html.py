@@ -383,6 +383,7 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
 .viewer-modal .vm-body {
   flex: 1; min-height: 0; display: grid;
   grid-template-columns: 56px 1fr 1fr 320px; gap: 1px; background: var(--line);
+  position: relative;
 }
 .viewer-modal .vm-minimap { background: var(--panel); overflow-y: auto; padding: 6px 4px; display: flex; flex-direction: column; gap: 4px; align-items: center; }
 .viewer-modal .vm-minimap .mp-page { width: 44px; cursor: pointer; position: relative; border: 1px solid var(--line); background: var(--panel-2); border-radius: 3px; padding: 6px 2px; text-align: center; }
@@ -491,6 +492,36 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
 .bulk-actions button { background: var(--panel-2); border: 1px solid var(--line); color: var(--fg); padding: 3px 10px; border-radius: 4px; font-size: 11.5px; cursor: pointer; }
 .bulk-actions button:hover { border-color: var(--blue); }
 .bulk-actions button.danger:hover { border-color: var(--red); color: var(--red); }
+
+/* ------------------- responsive viewer (Bundle 3 / C3) ------------------- */
+.vm-drawer-toggle {
+  background: var(--panel-2); border: 1px solid var(--line);
+  color: var(--fg); padding: 5px 10px; border-radius: 5px;
+  font-size: 14px; cursor: pointer; display: none;
+}
+@media (max-width: 1024px) {
+  .viewer-modal .vm-body { grid-template-columns: 56px 1fr 1fr; }
+  .viewer-modal .vm-sidebar {
+    position: absolute; top: 0; right: 0; bottom: 0;
+    width: min(360px, 85vw);
+    transform: translateX(100%);
+    transition: transform 0.2s ease;
+    z-index: 10;
+    box-shadow: -4px 0 20px rgba(0,0,0,0.3);
+  }
+  .viewer-modal .vm-sidebar.open { transform: translateX(0); }
+  .vm-drawer-toggle { display: inline-block !important; }
+}
+@media (min-width: 1025px) {
+  .vm-drawer-toggle { display: none; }
+}
+@media (max-width: 600px) {
+  .viewer-modal .vm-body {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr 1fr;
+  }
+  .viewer-modal .vm-minimap { display: none; }
+}
 
 /* ------------------- welcome empty state ------------------- */
 .welcome-empty { text-align: center; padding: 80px 24px; background: var(--panel); border: 1px dashed var(--line); border-radius: var(--rad-lg); }
@@ -778,6 +809,7 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
       <button id="vm-search-prev" title="Previous match">↑</button>
       <button id="vm-search-next" title="Next match">↓</button>
     </div>
+    <button id="vm-drawer-toggle" class="vm-drawer-toggle" aria-label="События" aria-expanded="false" title="События (drawer)">📑</button>
     <div class="vm-zoom">
       <button id="vm-zoom-out" title="Уменьшить">−</button>
       <span class="zoom-val" id="vm-zoom-val">140%</span>
@@ -2351,6 +2383,11 @@ async function jumpToEvent(evId) {
 }
 
 function closeInlineViewer() {
+  // Reset drawer state so the viewer always opens with sidebar closed
+  // on narrow screens (matches desktop default — sidebar visible inline).
+  const sb = document.querySelector('.viewer-modal .vm-sidebar');
+  sb?.classList.remove('open');
+  document.getElementById('vm-drawer-toggle')?.setAttribute('aria-expanded', 'false');
   _closeModal(document.getElementById('viewer-modal'));
   document.body.style.overflow = '';
   viewerState.lhsPdf = null; viewerState.rhsPdf = null;
@@ -2432,6 +2469,12 @@ function showEventPopover(evId, anchorEl) {
 }
 
 document.getElementById('vm-close').addEventListener('click', closeInlineViewer);
+document.getElementById('vm-drawer-toggle').addEventListener('click', () => {
+  const sidebar = document.querySelector('.viewer-modal .vm-sidebar');
+  const btn = document.getElementById('vm-drawer-toggle');
+  const open = sidebar.classList.toggle('open');
+  btn.setAttribute('aria-expanded', String(open));
+});
 
 function _setupSyncScroll() {
   const lhs = document.getElementById('vm-lhs-body');
@@ -2464,7 +2507,16 @@ document.addEventListener('keydown', e => {
   const t = e.target;
   const tag = (t && t.tagName || '').toUpperCase();
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (t && t.isContentEditable)) return;
-  if (e.key === 'Escape') { closeInlineViewer(); return; }
+  if (e.key === 'Escape') {
+    const sidebar = document.querySelector('.viewer-modal .vm-sidebar');
+    if (sidebar?.classList.contains('open')) {
+      sidebar.classList.remove('open');
+      document.getElementById('vm-drawer-toggle')?.setAttribute('aria-expanded', 'false');
+      return;
+    }
+    closeInlineViewer();
+    return;
+  }
   if (e.key === 'j' || e.key === 'J') { e.preventDefault(); _viewerJumpRelative(1); return; }
   if (e.key === 'k' || e.key === 'K') { e.preventDefault(); _viewerJumpRelative(-1); return; }
   if (e.key === 'a' || e.key === 'A') { e.preventDefault(); _viewerQuickDecide('confirmed'); return; }
