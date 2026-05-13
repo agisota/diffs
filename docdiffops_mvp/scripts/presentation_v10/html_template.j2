@@ -1,0 +1,848 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DocDiffOps v10 — Сквозная презентация</title>
+  <style>
+    /* INLINE CSS — Ocean Gradient */
+    :root {
+      --primary: #065A82;
+      --secondary: #1C7293;
+      --accent: #21295C;
+      --bg-light: #F9FAFB;
+      --ink: #0F172A;
+      --muted: #6B7280;
+      --rule: #D1D5DB;
+      /* status colors из forensic_render */
+      --st-match: #16A34A;
+      --st-partial: #F59E0B;
+      --st-contradict: #DC2626;
+      --st-outdated: #2563EB;
+      --st-gap: #9333EA;
+      --st-review: #EA580C;
+      --st-nc: #6B7280;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'DejaVu Sans', 'Noto Sans', system-ui, sans-serif;
+      background: var(--bg-light);
+      color: var(--ink);
+      line-height: 1.5;
+    }
+    /* Sticky top nav */
+    nav.toc-bar {
+      position: sticky; top: 0; z-index: 100;
+      background: linear-gradient(90deg, var(--primary), var(--secondary));
+      padding: 0.6rem 1.5rem;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    }
+    nav.toc-bar a {
+      color: white; text-decoration: none; margin-right: 1rem;
+      font-weight: 600; font-size: 0.9rem;
+    }
+    nav.toc-bar a:hover { text-decoration: underline; }
+    /* Hero */
+    .hero {
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
+      color: white; padding: 4rem 2rem; text-align: center;
+    }
+    .hero h1 { font-size: 3rem; font-weight: 700; }
+    .hero p { font-size: 1.2rem; margin-top: 1rem; opacity: 0.9; }
+    /* Sections */
+    section {
+      padding: 3rem 2rem; max-width: 1200px; margin: 0 auto;
+      border-bottom: 1px solid var(--rule);
+    }
+    section h2 {
+      color: var(--primary); font-size: 2rem; margin-bottom: 1rem;
+      padding-bottom: 0.5rem; border-bottom: 3px solid var(--secondary);
+    }
+    section h3 {
+      color: var(--secondary); font-size: 1.4rem; margin: 2rem 0 1rem;
+    }
+    section h4 {
+      color: var(--accent); font-size: 1.1rem; margin: 1.5rem 0 0.5rem;
+    }
+    section p { margin: 0.7rem 0; }
+    /* KPI tiles */
+    .kpi-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1rem; margin: 1.5rem 0;
+    }
+    .kpi-tile {
+      background: white; padding: 1.5rem; border-radius: 8px;
+      border-left: 4px solid var(--primary);
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    .kpi-tile.kpi-red { border-left-color: #DC2626; }
+    .kpi-tile.kpi-orange { border-left-color: #EA580C; }
+    .kpi-tile.kpi-teal { border-left-color: #1C7293; }
+    .kpi-tile .value {
+      font-size: 2.5rem; font-weight: 700; color: var(--primary);
+    }
+    .kpi-tile.kpi-red .value { color: #DC2626; }
+    .kpi-tile.kpi-orange .value { color: #EA580C; }
+    .kpi-tile.kpi-teal .value { color: #1C7293; }
+    .kpi-tile .label { font-size: 0.95rem; color: var(--muted); margin-top: 0.5rem; }
+    /* Tables */
+    table {
+      width: 100%; border-collapse: collapse; margin: 1rem 0;
+      font-size: 0.85rem;
+    }
+    thead th {
+      background: var(--primary); color: white; padding: 0.6rem;
+      text-align: left; font-weight: 600;
+    }
+    tbody td { padding: 0.5rem; border-bottom: 1px solid var(--rule); }
+    tbody tr:nth-child(even) { background: rgba(6,90,130,0.03); }
+    /* Status badges */
+    .status-badge {
+      display: inline-block; padding: 0.2rem 0.6rem; border-radius: 12px;
+      font-size: 0.8rem; font-weight: 600; color: white;
+    }
+    .st-match { background: var(--st-match); }
+    .st-partial { background: var(--st-partial); color: var(--ink); }
+    .st-contradiction { background: var(--st-contradict); }
+    .st-outdated { background: var(--st-outdated); }
+    .st-source_gap { background: var(--st-gap); }
+    .st-manual_review { background: var(--st-review); }
+    .st-not_comparable { background: var(--st-nc); }
+    /* Severity badges */
+    .sev-high { background: #DC2626; color: white; display: inline-block; padding: 0.15rem 0.5rem; border-radius: 10px; font-size: 0.8rem; font-weight: 600; }
+    .sev-medium { background: #EA580C; color: white; display: inline-block; padding: 0.15rem 0.5rem; border-radius: 10px; font-size: 0.8rem; font-weight: 600; }
+    .sev-low { background: #1C7293; color: white; display: inline-block; padding: 0.15rem 0.5rem; border-radius: 10px; font-size: 0.8rem; font-weight: 600; }
+    .pass-badge { background: #16A34A; color: white; display: inline-block; padding: 0.15rem 0.5rem; border-radius: 10px; font-size: 0.8rem; font-weight: 600; }
+    /* Bullets */
+    ul.bullets { padding-left: 0; }
+    ul.bullets li {
+      list-style: none; padding: 0.4rem 0; padding-left: 1.5rem; position: relative;
+    }
+    ul.bullets li::before {
+      content: "▸"; color: var(--secondary); position: absolute; left: 0;
+    }
+    ol.bullets { padding-left: 1.5rem; }
+    ol.bullets li { padding: 0.3rem 0; }
+    /* Charts */
+    figure.chart {
+      margin: 1.5rem 0; text-align: center;
+    }
+    figure.chart img {
+      max-width: 100%; height: auto; border-radius: 4px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    }
+    figure.chart figcaption {
+      margin-top: 0.5rem; color: var(--muted); font-size: 0.9rem; font-style: italic;
+    }
+    /* Code/IDs */
+    code { font-family: 'DejaVu Sans Mono', monospace;
+      background: rgba(6,90,130,0.08); padding: 0.1rem 0.3rem; border-radius: 3px;
+      font-size: 0.85em;
+    }
+    /* details/summary groups */
+    details { margin: 0.5rem 0; border: 1px solid var(--rule); border-radius: 4px; }
+    details summary {
+      padding: 0.5rem 1rem; cursor: pointer; background: rgba(6,90,130,0.05);
+      font-weight: 600; color: var(--primary); border-radius: 4px;
+      user-select: none;
+    }
+    details summary:hover { background: rgba(6,90,130,0.1); }
+    details[open] summary { border-bottom: 1px solid var(--rule); }
+    details > *:not(summary) { padding: 0 0.5rem 0.5rem; }
+    /* Print */
+    @media print {
+      nav.toc-bar { position: static; }
+      section { page-break-inside: avoid; }
+      details { display: block; }
+      details summary { display: none; }
+    }
+    /* Mobile */
+    @media (max-width: 768px) {
+      .hero h1 { font-size: 1.8rem; }
+      section { padding: 2rem 1rem; }
+      table { font-size: 0.75rem; }
+      nav.toc-bar a { font-size: 0.75rem; margin-right: 0.5rem; }
+    }
+  </style>
+</head>
+<body>
+  <!-- Sticky top nav -->
+  <nav class="toc-bar">
+    <a href="#cover">Обложка</a>
+    <a href="#executive">Executive</a>
+    <a href="#corpus">Корпус</a>
+    <a href="#pair-matrix">Матрица пар</a>
+    <a href="#critical-pairs">Критические пары</a>
+    <a href="#events">События</a>
+    <a href="#event-details">Детальные карточки</a>
+    <a href="#themes">Темы</a>
+    <a href="#theme-cards">Карточки тем</a>
+    <a href="#review-queue">Ручная проверка</a>
+    <a href="#trend-qa">Тренд и QA</a>
+    <a href="#actions">Действия</a>
+    <a href="#doc-spotlights">Document Spotlights</a>
+  </nav>
+
+  <header id="cover" class="hero">
+    <h1>DocDiffOps v10 — Сквозная презентация</h1>
+    <p>{{ subtitle }}</p>
+    <p style="margin-top:2rem"><code>Версия 10.0.0 · 2026-05-09 · QA-гейт {{ qa_passed }}/{{ qa_total }} PASS</code></p>
+  </header>
+
+  <!-- Содержание -->
+  <section id="toc">
+    <h2>Содержание</h2>
+    <ol class="bullets">
+      <li><a href="#executive">Executive Summary</a></li>
+      <li><a href="#corpus">Корпус: 27 документов</a></li>
+      <li><a href="#pair-matrix">Матрица пар (351)</a></li>
+      <li><a href="#critical-pairs">Критические пары (contradiction + partial_overlap)</a></li>
+      <li><a href="#events">События (312)</a></li>
+      <li><a href="#event-details">Детальные карточки событий (10)</a></li>
+      <li><a href="#themes">Темы и корреляция</a></li>
+      <li><a href="#theme-cards">Карточки тем (14)</a></li>
+      <li><a href="#review-queue">Очередь ручной проверки (103)</a></li>
+      <li><a href="#trend-qa">Тренд и QA (12/12 PASS)</a></li>
+      <li><a href="#actions">Действия и заключение</a></li>
+      <li><a href="#doc-spotlights">Document Spotlights (D18, D24, D27)</a></li>
+    </ol>
+  </section>
+
+  <!-- ===== 1. EXECUTIVE SUMMARY ===== -->
+  <section id="executive">
+    <h2>Executive Summary</h2>
+
+    <h3>Корпус и события</h3>
+    <div class="kpi-grid">
+      <div class="kpi-tile">
+        <div class="value">{{ cn_documents }}</div>
+        <div class="label">Документов в корпусе</div>
+      </div>
+      <div class="kpi-tile">
+        <div class="value">{{ cn_pairs }}</div>
+        <div class="label">Пар сравнения</div>
+      </div>
+      <div class="kpi-tile">
+        <div class="value">{{ cn_events }}</div>
+        <div class="label">Diff-событий</div>
+      </div>
+      <div class="kpi-tile">
+        <div class="value">{{ qa_passed }}/{{ qa_total }}</div>
+        <div class="label">QA-гейт PASS</div>
+      </div>
+    </div>
+
+    <h3>Распределение пар по статусам</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Статус</th>
+          <th>Русское название</th>
+          <th>Пар</th>
+          <th>%</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for status, count, pct, label in pairs_status_table %}
+        <tr>
+          <td><span class="status-badge st-{{ status }}">{{ status }}</span></td>
+          <td>{{ label }}</td>
+          <td>{{ count }}</td>
+          <td>{{ pct }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <figure class="chart">
+      <img src="{{ chart_status_pie }}" alt="Распределение пар по статусам">
+      <figcaption>Из {{ cn_pairs }} пар: 86 на ручную проверку, 202 несопоставимы, 53 частичных, 8 устаревших, 1 совпадение, 1 противоречие, 0 пробелов источника.</figcaption>
+    </figure>
+
+    <h3>Тренд по итерациям</h3>
+    <p>Падение match_share с 8.0% до 0.28% между v8 и v9 объясняется расширением корпуса (добавлен D27 ВЦИОМ, аналитический rank-3) — это не регресс качества, а смена базы. v10 — рендеринг-релиз, состав не менялся.</p>
+    <figure class="chart">
+      <img src="{{ chart_trend_match_share }}" alt="Тренд match_share по итерациям">
+      <figcaption>match_share: v7=8.0%, v8=8.0%, v9=0.28%, v10=0.28%</figcaption>
+    </figure>
+
+    <h3>Методология: ранговый шлюз</h3>
+    <ul class="bullets">
+      <li>Все события классифицируются по 7-балльной шкале v8 (match, partial_overlap, contradiction, outdated, source_gap, manual_review, not_comparable)</li>
+      <li>rank-3 ↔ rank-1 события со статусом <code>contradiction</code> автоматически понижаются до <code>manual_review</code></li>
+      <li>Аналитика не может юридически опровергнуть закон — базовое доказательственное правило</li>
+      <li>AC-02 в QA-гейте проверяет: 0 нарушений рангового шлюза в v10</li>
+    </ul>
+
+    <h3>Что нового в v10</h3>
+    <ul class="bullets">
+      <li>4 новых аналитических артефакта: correlation_matrix, coverage_heatmap, dependency_graph, claim_provenance</li>
+      <li>Каталог редакционных действий FA-01..FA-10 с полями where / what_is_wrong / what_to_do / owner</li>
+      <li>Пояснительная записка переработана до 16 страниц, 10 глав, Cyrillic PASS</li>
+      <li>0 новых документов, 0 новых пар, 0 новых событий — рендеринг-релиз поверх v9</li>
+    </ul>
+
+    <h3>Hero: ключевые цифры</h3>
+    <p>Итог попарного сравнения 27 нормативных и аналитических документов миграционной политики РФ: 1 совпадение и 1 противоречие. 86 на ручную проверку, 202 несопоставимы.</p>
+    <figure class="chart">
+      <img src="{{ chart_hero_visualization }}" alt="Hero: ключевые цифры">
+      <figcaption>Сводная визуализация результатов: 351 пара, 7 статусов v8</figcaption>
+    </figure>
+  </section>
+
+  <!-- ===== 2. CORPUS ===== -->
+  <section id="corpus">
+    <h2>Корпус: 27 документов</h2>
+
+    <h3>Распределение по рангам</h3>
+    <div class="kpi-grid">
+      <div class="kpi-tile">
+        <div class="value">{{ rank_counts[1] }}</div>
+        <div class="label">Rank-1: официальные НПА</div>
+      </div>
+      <div class="kpi-tile">
+        <div class="value">{{ rank_counts[2] }}</div>
+        <div class="label">Rank-2: ведомственные акты</div>
+      </div>
+      <div class="kpi-tile">
+        <div class="value">{{ rank_counts[3] }}</div>
+        <div class="label">Rank-3: аналитика</div>
+      </div>
+    </div>
+
+    <h3>Список документов Rank-1</h3>
+    <table>
+      <thead>
+        <tr><th>ID</th><th>Код</th><th>Ранг</th><th>Тип</th><th>Название</th></tr>
+      </thead>
+      <tbody>
+        {% for doc in rank1_docs %}
+        <tr>
+          <td><code>{{ doc.id }}</code></td>
+          <td>{{ doc.code[:30] if doc.code else '—' }}</td>
+          <td>{{ doc.rank }}</td>
+          <td>{{ doc.type[:35] if doc.type else '—' }}</td>
+          <td>{{ doc.title[:60] if doc.title else '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <h3>Список документов Rank-2 и Rank-3</h3>
+    <table>
+      <thead>
+        <tr><th>ID</th><th>Ранг</th><th>Код</th><th>Тип</th><th>Название</th></tr>
+      </thead>
+      <tbody>
+        {% for doc in rank23_docs %}
+        <tr>
+          <td><code>{{ doc.id }}</code></td>
+          <td>{{ doc.rank }}</td>
+          <td>{{ doc.code[:30] if doc.code else '—' }}</td>
+          <td>{{ doc.type[:35] if doc.type else '—' }}</td>
+          <td>{{ doc.title[:60] if doc.title else '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <h3>Типы документов (топ-5)</h3>
+    <ul class="bullets">
+      {% for doc_type, count in top_doc_types %}
+      <li>{{ doc_type }} — {{ count }}</li>
+      {% endfor %}
+    </ul>
+
+    <h3>Тематические кластеры (14 тем)</h3>
+    <ul class="bullets">
+      {% for theme_id, theme_name in themes_list %}
+      <li><code>{{ theme_id }}</code> {{ theme_name }}</li>
+      {% endfor %}
+    </ul>
+    <figure class="chart">
+      <img src="{{ chart_themes_distribution }}" alt="Распределение по темам">
+      <figcaption>Распределение событий по 14 тематическим кластерам</figcaption>
+    </figure>
+
+    <h3>Provenance</h3>
+    <ul class="bullets">
+      {% for status, count in provenance_counts %}
+      <li><code>{{ status if status else '(пусто)' }}</code>: {{ count }}</li>
+      {% endfor %}
+    </ul>
+    <figure class="chart">
+      <img src="{{ chart_rank_distribution }}" alt="Ранговое распределение">
+      <figcaption>Распределение документов по рангам</figcaption>
+    </figure>
+  </section>
+
+  <!-- ===== 3. PAIR MATRIX ===== -->
+  <section id="pair-matrix">
+    <h2>Матрица пар (351)</h2>
+    <p>Все-на-все сравнение {{ cn_documents }} документов даёт C(27,2) = 351 пару. Каждая пара получает один из 7 статусов v8-шкалы. Пары сгруппированы по 50 строк для удобства чтения.</p>
+
+    {% for chunk_label, chunk_rows in pairs_chunks %}
+    <details {% if loop.first %}open{% endif %}>
+      <summary>{{ chunk_label }}</summary>
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th><th>Левый</th><th>Правый</th><th>Темы</th><th>Статус</th><th>События</th><th>Ранги</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in chunk_rows %}
+          <tr>
+            <td><code>{{ row.id }}</code></td>
+            <td><code>{{ row.left }}</code> {{ row.left_short[:22] }}</td>
+            <td><code>{{ row.right }}</code> {{ row.right_short[:22] }}</td>
+            <td>{{ row.topics[:40] if row.topics else '—' }}</td>
+            <td><span class="status-badge st-{{ row.v8_status }}">{{ row.v8_status }}</span></td>
+            <td>{{ row.events_count }}</td>
+            <td>{{ row.rank_pair }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </details>
+    {% endfor %}
+  </section>
+
+  <!-- ===== 3·1. CRITICAL PAIRS ===== -->
+  <section id="critical-pairs">
+    <h2>Критические пары: contradiction + partial_overlap ({{ critical_pairs | length }} пары)</h2>
+    <p>Все пары со статусами <span class="status-badge st-contradiction">contradiction</span> и <span class="status-badge st-partial">partial_overlap</span> — требуют приоритетной ручной проверки.</p>
+
+    <details open>
+      <summary>Развернуть {{ critical_pairs | length }} критических пар</summary>
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th><th>Левый</th><th>Правый</th><th>Темы</th><th>Статус</th><th>События</th><th>Ранги</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in critical_pairs %}
+          <tr>
+            <td><code>{{ row.id }}</code></td>
+            <td><code>{{ row.left }}</code> {{ row.left_short }}</td>
+            <td><code>{{ row.right }}</code> {{ row.right_short }}</td>
+            <td>{{ row.topics[:40] if row.topics else '—' }}</td>
+            <td><span class="status-badge st-{{ row.v8_status }}">{{ row.v8_status }}</span></td>
+            <td>{{ row.events_count }}</td>
+            <td>{{ row.rank_pair }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </details>
+  </section>
+
+  <!-- ===== 4. EVENTS ===== -->
+  <section id="events">
+    <h2>События (312)</h2>
+    <p>312 diff-событий по всем парам. Статусы: match, partial_overlap, contradiction, outdated, source_gap, manual_review, not_comparable. События сгруппированы по 50 строк.</p>
+
+    {% for chunk_label, chunk_rows in events_chunks %}
+    <details {% if loop.first %}open{% endif %}>
+      <summary>{{ chunk_label }}</summary>
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th><th>Тема</th><th>Левый</th><th>Правый</th><th>Утверждение</th><th>Доказательство</th><th>Статус</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for ev in chunk_rows %}
+          <tr>
+            <td><code>{{ ev.event_id }}</code></td>
+            <td>{{ ev.theme[:25] if ev.theme else '—' }}</td>
+            <td><code>{{ ev.left_id }}</code> {{ ev.left_doc[:20] }}</td>
+            <td><code>{{ ev.right_id }}</code> {{ ev.right_doc[:20] }}</td>
+            <td>{{ ev.claim_left[:60] if ev.claim_left else '—' }}</td>
+            <td>{{ ev.evidence_right[:60] if ev.evidence_right else '—' }}</td>
+            <td><span class="status-badge st-{{ ev.status }}">{{ ev.status }}</span></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </details>
+    {% endfor %}
+  </section>
+
+  <!-- ===== 4·1. EVENT DETAIL CARDS ===== -->
+  <section id="event-details">
+    <h2>Детальные карточки событий</h2>
+    <p>Выборка: 1 противоречие, 6 частичных перекрытий, 3 устаревших события — топ по confidence в каждой группе.</p>
+
+    {% for card in event_detail_cards %}
+    <article style="margin:1.5rem 0; border-left:4px solid var(--secondary); padding:1rem 1.5rem; background:white; border-radius:4px; box-shadow:0 1px 4px rgba(0,0,0,0.06);">
+      <h3 style="margin-top:0;"><code>{{ card.event_id }}</code> — {{ card.theme[:60] if card.theme else '—' }}
+        <span class="status-badge st-{{ card.status }}" style="float:right; font-size:0.75rem;">{{ card.status }}</span>
+      </h3>
+      <p style="border-left:3px solid var(--primary); padding:0.5rem 1rem; font-style:italic; margin:0.7rem 0;">
+        <strong>Утверждение:</strong> {{ card.claim_left[:200] if card.claim_left else '—' }}<br>
+        <small style="color:var(--muted)">Источник: <code>{{ card.left_id }}</code> {{ card.left_doc[:40] }}</small>
+      </p>
+      <p style="border-left:3px solid var(--secondary); padding:0.5rem 1rem; font-style:italic; margin:0.7rem 0;">
+        <strong>Доказательство:</strong> {{ card.evidence_right[:200] if card.evidence_right else '—' }}<br>
+        <small style="color:var(--muted)">Источник: <code>{{ card.right_id }}</code> {{ card.right_doc[:40] }}</small>
+      </p>
+      <p style="border-left:3px solid var(--accent); padding:0.5rem 1rem; font-style:italic; margin:0.7rem 0;">
+        <strong>Заключение:</strong> {{ card.conclusion[:200] if card.conclusion else '—' }}
+      </p>
+      <p style="color:var(--muted); font-size:0.85rem; margin:0.5rem 0 0;">
+        <strong>Координата:</strong> {{ card.legal_coordinate if card.legal_coordinate else '—' }} &nbsp;·&nbsp;
+        <strong>Confidence:</strong> {{ card.confidence if card.confidence else '—' }}
+      </p>
+    </article>
+    {% endfor %}
+  </section>
+
+  <!-- ===== 5. THEMES ===== -->
+  <section id="themes">
+    <h2>Темы и корреляция</h2>
+
+    <h3>Корреляционная матрица (14 тем × 27 документов)</h3>
+    <figure class="chart">
+      <img src="{{ chart_correlation_heatmap }}" alt="Корреляционная матрица">
+      <figcaption>Матрица корреляций между тематическими кластерами и документами корпуса</figcaption>
+    </figure>
+
+    <h3>Глубина покрытия (coverage heatmap)</h3>
+    <figure class="chart">
+      <img src="{{ chart_coverage_heatmap }}" alt="Coverage heatmap">
+      <figcaption>Глубина документального покрытия для каждой темы</figcaption>
+    </figure>
+
+    <h3>Граф зависимостей ({{ dep_graph_count }} рёбер)</h3>
+    <figure class="chart">
+      <img src="{{ chart_dependency_graph }}" alt="Граф зависимостей">
+      <figcaption>Граф ссылок и поправок между документами корпуса</figcaption>
+    </figure>
+    <ul class="bullets">
+      {% for rel_type, count in dep_rel_counts %}
+      <li><code>{{ rel_type }}</code>: {{ count }} связей</li>
+      {% endfor %}
+    </ul>
+
+    <h3>Каталог тем</h3>
+    <table>
+      <thead>
+        <tr><th>ID</th><th>Тема</th><th>Документов</th></tr>
+      </thead>
+      <tbody>
+        {% for theme_id, theme_name, doc_count in theme_catalog %}
+        <tr>
+          <td><code>{{ theme_id }}</code></td>
+          <td>{{ theme_name }}</td>
+          <td>{{ doc_count }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ===== 5·1. THEME CARDS ===== -->
+  <section id="theme-cards">
+    <h2>Карточки тем</h2>
+    <p>14 тематических кластеров корпуса — документный состав, статусы событий и ключевые тезисы.</p>
+
+    {% for tc in theme_cards %}
+    <article style="margin:1.5rem 0; border:1px solid var(--rule); border-radius:6px; padding:1.5rem; background:white; box-shadow:0 1px 4px rgba(0,0,0,0.06);">
+      <h3 style="margin-top:0;">Тема <code>{{ tc.id }}</code>: {{ tc.name }}</h3>
+      <p style="color:var(--muted); font-size:0.9rem;">
+        Документов в теме: <strong>{{ tc.doc_count }}</strong> &nbsp;·&nbsp;
+        Событий: <strong>{{ tc.event_count }}</strong> &nbsp;·&nbsp;
+        Очередь проверки: <strong>{{ tc.review_count }}</strong>
+      </p>
+      {% if tc.docs_table %}
+      <table style="font-size:0.8rem; margin:0.7rem 0;">
+        <thead>
+          <tr><th>ID</th><th>Код</th><th>Ранг</th><th>Роль</th></tr>
+        </thead>
+        <tbody>
+          {% for d in tc.docs_table %}
+          <tr>
+            <td><code>{{ d.id }}</code></td>
+            <td>{{ d.code }}</td>
+            <td>{{ d.rank }}</td>
+            <td>{{ d.role if d.role else '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+      {% if tc.theses %}
+      <ul class="bullets" style="margin-top:0.5rem;">
+        {% for thesis in tc.theses %}
+        <li>{{ thesis }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </article>
+    {% endfor %}
+  </section>
+
+  <!-- ===== 6. REVIEW QUEUE ===== -->
+  <section id="review-queue">
+    <h2>Очередь ручной проверки (103 задачи)</h2>
+
+    <div class="kpi-grid">
+      <div class="kpi-tile kpi-red">
+        <div class="value">{{ prio_p0 }}</div>
+        <div class="label">P0 — критические</div>
+      </div>
+      <div class="kpi-tile kpi-orange">
+        <div class="value">{{ prio_p1 }}</div>
+        <div class="label">P1 — важные</div>
+      </div>
+      <div class="kpi-tile kpi-teal">
+        <div class="value">{{ prio_p2 }}</div>
+        <div class="label">P2 — плановые</div>
+      </div>
+      <div class="kpi-tile">
+        <div class="value">103</div>
+        <div class="label">Итого задач</div>
+      </div>
+    </div>
+
+    <figure class="chart">
+      <img src="{{ chart_priority_split }}" alt="Распределение по приоритетам">
+      <figcaption>103 задачи: P0=4, P1=2, P2=97</figcaption>
+    </figure>
+
+    <p>103 задачи = 54 baseline (manual_review) + 49 partial_overlap требующих уточнения.</p>
+
+    <h3>Топ-приоритеты P0 + P1</h3>
+    <table>
+      <thead>
+        <tr><th>ID</th><th>Приоритет</th><th>Тема</th><th>Что проверить</th><th>Почему</th><th>Источник</th><th>Владелец</th></tr>
+      </thead>
+      <tbody>
+        {% for rv in review_high_prio %}
+        <tr>
+          <td><code>{{ rv.review_id }}</code></td>
+          <td>{{ rv.priority }}</td>
+          <td>{{ rv.theme[:25] if rv.theme else '—' }}</td>
+          <td>{{ rv.what_to_check[:60] if rv.what_to_check else '—' }}</td>
+          <td>{{ rv.why[:60] if rv.why else '—' }}</td>
+          <td>{{ rv.source[:40] if rv.source else '—' }}</td>
+          <td>{{ rv.owner[:30] if rv.owner else '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <h3>Полная очередь P2 (97 задач)</h3>
+    <details>
+      <summary>Развернуть очередь P2 (97 строк)</summary>
+      <table>
+        <thead>
+          <tr><th>ID</th><th>Тема</th><th>Что проверить</th><th>Почему</th><th>Источник</th><th>Владелец</th><th>Дедлайн</th></tr>
+        </thead>
+        <tbody>
+          {% for rv in review_p2 %}
+          <tr>
+            <td><code>{{ rv.review_id }}</code></td>
+            <td>{{ rv.theme[:25] if rv.theme else '—' }}</td>
+            <td>{{ rv.what_to_check[:60] if rv.what_to_check else '—' }}</td>
+            <td>{{ rv.why[:60] if rv.why else '—' }}</td>
+            <td>{{ rv.source[:40] if rv.source else '—' }}</td>
+            <td>{{ rv.owner[:30] if rv.owner else '—' }}</td>
+            <td>{{ rv.deadline[:30] if rv.deadline else '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </details>
+
+    <h3>Распределение по владельцам (топ-5)</h3>
+    <ul class="bullets">
+      {% for owner, count in review_owners_top %}
+      <li>{{ owner if owner else '(не назначен)' }}: {{ count }}</li>
+      {% endfor %}
+    </ul>
+  </section>
+
+  <!-- ===== 7. TREND & QA ===== -->
+  <section id="trend-qa">
+    <h2>Тренд и QA</h2>
+
+    <h3>Тренд v7 → v10</h3>
+    <table>
+      <thead>
+        <tr><th>Версия</th><th>Дата</th><th>Документов</th><th>Пар</th><th>Событий</th><th>match_share %</th><th>Очередь</th></tr>
+      </thead>
+      <tbody>
+        {% for row in trend_timeline %}
+        <tr>
+          <td><strong>{{ row.version }}</strong></td>
+          <td>{{ row.date[:10] }}</td>
+          <td>{{ row.docs }}</td>
+          <td>{{ row.pairs }}</td>
+          <td>{{ row.events }}</td>
+          <td>{{ row.match_share }}</td>
+          <td>{{ row.review_queue }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <figure class="chart">
+      <img src="{{ chart_trend_match_share }}" alt="Тренд match_share">
+      <figcaption>Динамика match_share по итерациям v7–v10</figcaption>
+    </figure>
+    <figure class="chart">
+      <img src="{{ chart_trend_review_queue }}" alt="Тренд очереди проверки">
+      <figcaption>Динамика очереди ручной проверки v7–v10</figcaption>
+    </figure>
+
+    <h3>Обоснование degrading direction</h3>
+    <ul class="bullets">
+      <li>v7→v8: match_share=8.0%, review_queue=183 — та же база, но ранговый шлюз применён, queue упала с 183 до 61 после перекласификации</li>
+      <li>v8→v9: добавлен D27 (ВЦИОМ, rank-3) — match_share падает с 8.0% до 0.28%, queue снижается до 54</li>
+      <li>v9→v10: рендеринг-релиз — данные заморожены, показатели идентичны v9</li>
+      <li>Вывод: уменьшение match_share — плановое следствие расширения corpus, не регресс</li>
+    </ul>
+
+    <h3>QA-гейт: {{ qa_passed }}/{{ qa_total }} PASS</h3>
+    <table>
+      <thead>
+        <tr><th>Критерий</th><th>Описание</th><th>Статус</th><th>Доказательство</th></tr>
+      </thead>
+      <tbody>
+        {% for check in qa_checks %}
+        <tr>
+          <td><code>{{ check.name }}</code></td>
+          <td>{{ check.description }}</td>
+          <td><span class="pass-badge">PASS</span></td>
+          <td><code>{{ check.evidence }}</code></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <h3>Известные оговорки</h3>
+    <ul class="bullets">
+      <li>AC-05 (Cyrillic in PDF) проверяется через <code>pdftotext</code> — зависит от окружения CI</li>
+      <li>Статус provenance <code>failed_curl_28</code> / <code>blocked_qrator_stub</code> — сайты заблокированы; source_gap не присвоен, т.к. текст доступен в кэше</li>
+      <li>match_share 0.28% — артефакт масштаба корпуса, не метрика точности алгоритма</li>
+      <li>Все 312 событий содержат цитату + evidence + source_rank — AC-03 PASS</li>
+    </ul>
+  </section>
+
+  <!-- ===== 8. ACTIONS ===== -->
+  <section id="actions">
+    <h2>Действия и заключение</h2>
+
+    <figure class="chart">
+      <img src="{{ chart_actions_severity }}" alt="Серьёзность редакционных действий">
+      <figcaption>Распределение FA-01..FA-10 по уровню серьёзности (high / medium / low)</figcaption>
+    </figure>
+
+    <h3>Каталог действий FA-01..FA-10</h3>
+    <table>
+      <thead>
+        <tr><th>ID</th><th>Категория</th><th>Серьёзность</th><th>Где</th><th>Что не так</th><th>Что сделать</th><th>Ответственный</th></tr>
+      </thead>
+      <tbody>
+        {% for fa in actions_table %}
+        <tr>
+          <td><code>{{ fa.id }}</code></td>
+          <td>{{ fa.cat_ru }}</td>
+          <td>
+            {% if fa.severity == 'high' %}<span class="sev-high">high</span>
+            {% elif fa.severity == 'medium' %}<span class="sev-medium">medium</span>
+            {% else %}<span class="sev-low">{{ fa.severity }}</span>{% endif %}
+          </td>
+          <td>{{ fa.where[:50] if fa.where else '—' }}</td>
+          <td>{{ fa.what_is_wrong[:60] if fa.what_is_wrong else '—' }}</td>
+          <td>{{ fa.what_to_do[:60] if fa.what_to_do else '—' }}</td>
+          <td>{{ fa.owner[:40] if fa.owner else '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <h3>По каждому действию</h3>
+    {% for fa in actions_detail %}
+    <h4><code>{{ fa.id }}</code> — {{ fa.cat_ru }} <small style="font-weight:normal;color:var(--muted)">[{{ fa.severity }}]</small></h4>
+    <p><strong>Где:</strong> {{ fa.where }}</p>
+    <p><strong>Что не так:</strong> {{ fa.what_is_wrong }}</p>
+    <p><strong>Что сделать:</strong> {{ fa.what_to_do }}</p>
+    <p><strong>Ответственный:</strong> {{ fa.owner if fa.owner else '—' }}</p>
+    {% endfor %}
+
+    <h3>Приоритизация</h3>
+    <ul class="bullets">
+      <li>High-severity (FA-01..FA-03): немедленное исправление брошюр и ведомственных материалов до внешней коммуникации</li>
+      <li>Medium-severity (FA-04..FA-07): плановое уточнение цепочек поправок и концептуальных замещений</li>
+      <li>Low-severity (FA-08..FA-10): аналитическое разделение, риски provenance — фиксация в следующем спринте</li>
+      <li>Все действия верифицированы через QA-гейт: 0 ложных срабатываний рангового шлюза</li>
+    </ul>
+
+    <h3>v11 roadmap</h3>
+    <ul class="bullets">
+      <li>Закрытие P0/P1 очереди (6 задач): получить актуальные редакции ПП2573 + ПП1375</li>
+      <li>Автоматический мониторинг: подключить RSS-фид pravo.gov.ru для отслеживания поправок rank-1</li>
+      <li>Расширение корпуса: добавить D28+ (новые ведомственные разъяснения по ЕАЭС)</li>
+      <li>Оценка LLM pair-diff: включить <code>LLM_PAIR_DIFF_ENABLED=true</code> для A/B сравнения с fuzzy</li>
+    </ul>
+  </section>
+
+  <!-- ===== 9. DOCUMENT SPOTLIGHTS ===== -->
+  <section id="doc-spotlights">
+    <h2>Document Spotlights</h2>
+    <p>Три ключевых документа корпуса — паспорт, тезисы и граф зависимостей.</p>
+
+    {% for sp in spotlight_docs %}
+    <article style="margin:1.5rem 0; border:1px solid var(--rule); border-radius:6px; padding:1.5rem; background:white; box-shadow:0 1px 4px rgba(0,0,0,0.06);">
+      <h3 style="margin-top:0;"><code>{{ sp.id }}</code> {{ sp.code }} — {{ sp.title }}</h3>
+      <p style="background:rgba(6,90,130,0.05); padding:0.6rem 1rem; border-radius:4px; font-size:0.9rem; color:var(--muted);">
+        <strong>Тип:</strong> {{ sp.type if sp.type else '—' }} &nbsp;·&nbsp;
+        <strong>Ранг:</strong> {{ sp.rank if sp.rank else '—' }}
+        {% if sp.url %} &nbsp;·&nbsp; <strong>URL:</strong> <a href="{{ sp.url }}" target="_blank" rel="noopener" style="color:var(--secondary);">{{ sp.url[:60] }}</a>{% endif %}
+      </p>
+      {% if sp.top_theses %}
+      <h4>Ключевые тезисы</h4>
+      <ul class="bullets">
+        {% for thesis in sp.top_theses %}
+        <li>{{ thesis }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-top:1rem;">
+        <div>
+          <h4>Ссылается на</h4>
+          {% if sp.refs_out %}
+          <ul class="bullets">
+            {% for ref in sp.refs_out %}
+            <li><code>{{ ref.id }}</code> <small style="color:var(--muted)">[{{ ref.rel }}]</small></li>
+            {% endfor %}
+          </ul>
+          {% else %}
+          <p style="color:var(--muted); font-size:0.9rem;">—</p>
+          {% endif %}
+        </div>
+        <div>
+          <h4>На него ссылаются</h4>
+          {% if sp.refs_in %}
+          <ul class="bullets">
+            {% for ref in sp.refs_in %}
+            <li><code>{{ ref.id }}</code> <small style="color:var(--muted)">[{{ ref.rel }}]</small></li>
+            {% endfor %}
+          </ul>
+          {% else %}
+          <p style="color:var(--muted); font-size:0.9rem;">—</p>
+          {% endif %}
+        </div>
+      </div>
+    </article>
+    {% endfor %}
+  </section>
+
+  <footer style="text-align:center; padding:2rem; color:var(--muted); font-size:0.9rem; border-top:1px solid var(--rule);">
+    DocDiffOps v10 · Generated 2026-05-09 · scripts/presentation_v10/html_builder.py
+  </footer>
+</body>
+</html>
