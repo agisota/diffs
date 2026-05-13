@@ -30,6 +30,23 @@ APP_HTML = r"""<!doctype html>
   --rad: 6px; --rad-lg: 10px;
   --shadow: 0 6px 28px rgba(0,0,0,0.45);
 }
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 1000;
+  background: var(--blue);
+  color: #04111a;
+  padding: 8px 14px;
+  border-radius: 0 0 6px 0;
+  font-weight: 600;
+  text-decoration: none;
+}
+.skip-link:focus,
+.skip-link:focus-visible {
+  left: 0;
+  outline: none;
+}
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     transition-duration: 0.01ms !important;
@@ -501,6 +518,7 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
 </style>
 </head>
 <body>
+<a class="skip-link" href="#main-content">Перейти к содержимому</a>
 
 <header class="topbar">
   <div class="brand"><span class="brand-dot"></span> DocDiffOps</div>
@@ -518,7 +536,7 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
   </div>
 </header>
 
-<main class="app">
+<main class="app" id="main-content" tabindex="-1">
 
   <!-- ============== upload view ============== -->
   <section id="view-upload" hidden>
