@@ -12,6 +12,16 @@ APP_HTML = r"""<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>DocDiffOps</title>
+<script>
+// Pre-paint theme: read user's saved preference and apply data-theme
+// BEFORE the inline <style> + body render, to avoid FOUC.
+(function(){
+  try {
+    var pref = localStorage.getItem('docdiff:theme');
+    if (pref === 'light' || pref === 'dark') document.documentElement.dataset.theme = pref;
+  } catch (_) {}
+})();
+</script>
 <script src="/static/pdfjs/pdf.min.js"></script>
 <script>
   // pdf.js worker must be configured before any getDocument call.
@@ -21,7 +31,7 @@ APP_HTML = r"""<!doctype html>
   }
 </script>
 <style>
-:root {
+:root, :root[data-theme="dark"] {
   --bg: #0b0d12; --panel: #11141b; --panel-2: #161a22; --line: #1f2632;
   --fg: #e9eef5; --mute: #8b97aa; --strong: #ffffff;
   --blue: #4cc3ff; --blue-dim: #1d4d6b;
@@ -29,6 +39,26 @@ APP_HTML = r"""<!doctype html>
   --hi: rgba(255,214,10,0.85);
   --rad: 6px; --rad-lg: 10px;
   --shadow: 0 6px 28px rgba(0,0,0,0.45);
+}
+:root[data-theme="light"] {
+  --bg: #fafbfc; --panel: #ffffff; --panel-2: #f4f5f7; --line: #e1e4e8;
+  --fg: #24292e; --mute: #6a737d; --strong: #000000;
+  --blue: #0366d6; --blue-dim: #c8e1ff;
+  --green: #1a7f37; --red: #cf222e; --amber: #9a6700; --gray: #57606a;
+  --hi: rgba(255,214,10,0.85);
+  --rad: 6px; --rad-lg: 10px;
+  --shadow: 0 6px 28px rgba(0,0,0,0.10);
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]):not([data-theme="light"]) {
+    --bg: #fafbfc; --panel: #ffffff; --panel-2: #f4f5f7; --line: #e1e4e8;
+    --fg: #24292e; --mute: #6a737d; --strong: #000000;
+    --blue: #0366d6; --blue-dim: #c8e1ff;
+    --green: #1a7f37; --red: #cf222e; --amber: #9a6700; --gray: #57606a;
+    --hi: rgba(255,214,10,0.85);
+    --rad: 6px; --rad-lg: 10px;
+    --shadow: 0 6px 28px rgba(0,0,0,0.10);
+  }
 }
 .skip-link {
   position: absolute;
@@ -712,6 +742,14 @@ mark { background: var(--hi); color: #000; padding: 0 2px; border-radius: 2px; }
         <option value="score-desc">по score (высокий)</option>
         <option value="events-desc">по количеству событий</option>
         <option value="high-desc">по high-risk</option>
+      </select>
+    </div>
+    <div class="settings-row">
+      <label>Тема оформления</label>
+      <select id="settings-theme">
+        <option value="auto">Авто (по системе)</option>
+        <option value="light">Светлая</option>
+        <option value="dark">Тёмная</option>
       </select>
     </div>
     <div class="settings-row">
@@ -2750,12 +2788,14 @@ function _initSettingsModal() {
   const sel = document.getElementById('settings-default-sort');
   const clearBtn = document.getElementById('settings-clear');
   const saveBtn = document.getElementById('settings-save');
+  const themeSel = document.getElementById('settings-theme');
   if (!modal || !inp || !sel) return;
 
   // Pre-fill from localStorage when modal opens
   const updateFields = () => {
     inp.value = localStorage.getItem('docdiff:reviewer') || '';
     sel.value = localStorage.getItem(SETTINGS_DEFAULT_SORT_KEY) || 'updated';
+    themeSel.value = localStorage.getItem('docdiff:theme') || 'auto';
   };
 
   // Hook open events — populate fields
@@ -2768,6 +2808,14 @@ function _initSettingsModal() {
     const name = (inp.value || '').trim();
     if (name) localStorage.setItem('docdiff:reviewer', name);
     localStorage.setItem(SETTINGS_DEFAULT_SORT_KEY, sel.value);
+    const themeVal = themeSel.value;
+    if (themeVal === 'auto') {
+      localStorage.removeItem('docdiff:theme');
+      delete document.documentElement.dataset.theme;
+    } else {
+      localStorage.setItem('docdiff:theme', themeVal);
+      document.documentElement.dataset.theme = themeVal;
+    }
     toast('Настройки сохранены', 'success');
     _closeModal(modal);
     // Re-render pairs with new sort if currently on detail view
@@ -2782,6 +2830,7 @@ function _initSettingsModal() {
     if (!confirm('Очистить все локальные настройки и bookmarks?')) return;
     const keys = Object.keys(localStorage).filter(k => k.startsWith('docdiff:'));
     keys.forEach(k => localStorage.removeItem(k));
+    delete document.documentElement.dataset.theme;
     toast(`Очищено ${keys.length} ключей`, 'success');
     updateFields();
   });
